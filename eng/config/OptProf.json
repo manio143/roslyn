@@ -532,7 +532,7 @@
             },
             {
               "filename": "/Microsoft.CodeAnalysis.VisualBasic.EditorFeatures.dll",
-              "testCases":[ "VSPE.OptProfTests.vs_asl_vb_scenario", "VSPE.OptProfTests.vs_perf_designtime_solution_build_vb_australiangovernment" ]
+              "testCases":[ "VSPE.OptProfTests.vs_asl_vb_scenario" ]
             },
             {
               "filename": "/DesktopHost/System.Text.Encoding.CodePages.dll",
