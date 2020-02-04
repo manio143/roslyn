@@ -21,7 +21,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             ImportChain importChain,
             DiagnosticBag diagsForCurrentMethod)
         {
-            var builder = new ILBuilder(_moduleBeingBuiltOpt, new LocalSlotManager(lazyVariableSlotAllocator), OptimizationLevel.Release)
+            var builder = new ILBuilder(_moduleBeingBuiltOpt, new LocalSlotManager(lazyVariableSlotAllocator), OptimizationLevel.Release, true)
             {
                 RealizedExceptionHandlers = ImmutableArray<ExceptionHandlerRegion>.Empty
             };
@@ -50,6 +50,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                 sequencePoints: builder.RealizedSequencePoints,
                 debugDocumentProvider: null,
                 exceptionHandlers: builder.RealizedExceptionHandlers,
+                areLocalsZeroed: true,
+                hasStackalloc: false,
                 localScopes: builder.GetAllScopes(),
                 hasDynamicLocalVariables: builder.HasDynamicLocal,
                 importScopeOpt: importChain?.Translate(_moduleBeingBuiltOpt, diagsForCurrentMethod),

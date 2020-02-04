@@ -44,8 +44,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
 
         private int _currentStandAloneSigRowId;
 
-        private bool _needsGeneratedIsReadOnlyAttribute_Value;
-        private bool _needsGeneratedIsUnmanagedAttribute_Value;
         private int _needsGeneratedAttributes;
         private bool _needsGeneratedAttributes_IsFrozen;
 

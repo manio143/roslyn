@@ -1261,7 +1261,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             foreach (var attribute in methodSymbol.GetAttributes())
                             {
                                 var originalDef = attribute?.AttributeClass?.OriginalDefinition;
-                                if (originalDef != null && originalDef.ContainingNamespace?.QualifiedName == "System.Runtime.CompilerServices" && originalDef.Name == "CompilerIntrinsicAttribute")
+                                if (!(TypeSymbol.Equals(originalDef, null, default)) && originalDef.ContainingNamespace?.QualifiedName == "System.Runtime.CompilerServices" && originalDef.Name == "CompilerIntrinsicAttribute")
                                 {
                                     CompilerIntrinsicHandler.HandleIntrinsic(_moduleBeingBuiltOpt, methodSymbol, lazyVariableSlotAllocator, stateMachineTypeOpt, importChain, diagsForCurrentMethod);
                                 }

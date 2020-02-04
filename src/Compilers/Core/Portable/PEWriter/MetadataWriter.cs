@@ -2994,7 +2994,7 @@ namespace Microsoft.Cci
         protected virtual StandaloneSignatureHandle SerializeCallIndirectSignature(IMethodReference methodReference)
         {
             Debug.Assert(!_tableIndicesAreComplete);
-            
+
             BlobHandle blobIndex = GetMethodSignatureHandle(methodReference);
 
             var handle = GetOrAddStandaloneSignatureHandle(blobIndex);
@@ -4262,6 +4262,8 @@ namespace Microsoft.Cci
                 {
                     return this._inner.RefCustomModifiers;
                 }
+            }
+        }
         private class ByteSequenceBoolTupleComparer : IEqualityComparer<(ImmutableArray<byte>, bool)>
         {
             internal static readonly ByteSequenceBoolTupleComparer Instance = new ByteSequenceBoolTupleComparer();

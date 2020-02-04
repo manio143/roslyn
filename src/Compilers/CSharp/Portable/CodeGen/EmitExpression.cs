@@ -1459,20 +1459,20 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             var method = call.Method;
 
             var parameterCount = method.ParameterCount;
-            var typeArgumentsLength = method.TypeArguments.Length;
+            var typeArgumentsLength = method.TypeParameters.Length;
             var name = method.Name;
 
             if (method.ReturnType?.SpecialType == SpecialType.System_RuntimeTypeHandle && parameterCount == 0 && typeArgumentsLength == 1 && string.Equals(name, "LoadTypeToken"))
             {
                 match = true;
                 _builder.EmitOpCode(ILOpCode.Ldtoken);
-                EmitSymbolToken(method.TypeArguments[0], call.Syntax);
+                EmitSymbolToken(method.TypeParameters[0], call.Syntax);
             }
             else if (method.ReturnType?.SpecialType == SpecialType.System_Int32 && parameterCount == 0 && typeArgumentsLength == 1 && string.Equals(name, "LoadTypeTokenInt32"))
             {
                 match = true;
                 _builder.EmitOpCode(ILOpCode.Ldc_i4);
-                EmitSymbolToken(method.TypeArguments[0], call.Syntax);
+                EmitSymbolToken(method.TypeParameters[0], call.Syntax);
             }
             else if (method.ReturnType?.SpecialType == SpecialType.System_String && parameterCount == 0 && typeArgumentsLength == 0 && string.Equals(name, "LoadMvidString"))
             {
@@ -1606,7 +1606,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 foreach (var attribute in method.GetAttributes())
                 {
                     var originalDef = attribute?.AttributeClass?.OriginalDefinition;
-                    if (originalDef != null &&
+                    if (!(TypeSymbol.Equals(originalDef, null, default)) &&
                         originalDef.ContainingNamespace?.QualifiedName == "System.Runtime.CompilerServices" &&
                         originalDef.Name == "CompilerIntrinsicAttribute")
                     {

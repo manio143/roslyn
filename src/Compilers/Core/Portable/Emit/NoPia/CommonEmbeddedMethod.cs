@@ -161,7 +161,7 @@ namespace Microsoft.CodeAnalysis.Emit.NoPia
 
                 public DebugId MethodId => default(DebugId);
 
-                public int StandAloneSignatureRowId {  get { return 0; } }
+                public int StandAloneSignatureRowId { get { return 0; } }
 
                 public Cci.CallingConvention IndirectCallingConvention { get { return Cci.CallingConvention.Default; } }
             }
