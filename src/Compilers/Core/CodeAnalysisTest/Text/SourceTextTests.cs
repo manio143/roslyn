@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Immutable;
 using System.IO;
@@ -212,7 +214,7 @@ namespace Microsoft.CodeAnalysis.UnitTests.Text
             Assert.True(SourceText.IsBinary("a\0\0bc"));
             Assert.True(SourceText.IsBinary("abc\0\0"));
 
-            var encoding = Encoding.GetEncoding(1252);
+            var encoding = Encoding.UTF8;
             Assert.False(SourceText.IsBinary(encoding.GetString(new byte[] { 0x81, 0x8D, 0x8F, 0x90, 0x9D })));
             // Unicode string: äëïöüû
             Assert.False(SourceText.IsBinary("abc def baz aeiouy \u00E4\u00EB\u00EF\u00F6\u00FC\u00FB"));

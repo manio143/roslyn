@@ -383,18 +383,15 @@ class C
     }
 }");
             comp.VerifyDiagnostics(
-                // (14,13): error CS0159: No such label 'label1' within the scope of the goto statement
-                //             goto label1;
-                Diagnostic(ErrorCode.ERR_LabelNotFound, "goto").WithArguments("label1").WithLocation(14, 13),
-                // (19,13): error CS0139: No enclosing loop out of which to break or continue
-                //             break;
-                Diagnostic(ErrorCode.ERR_NoBreakOrCont, "break;").WithLocation(19, 13),
-                // (24,13): error CS0139: No enclosing loop out of which to break or continue
-                //             continue;
-                Diagnostic(ErrorCode.ERR_NoBreakOrCont, "continue;").WithLocation(24, 13),
-                // (6,9): warning CS0164: This label has not been referenced
-                //         label1:
-                Diagnostic(ErrorCode.WRN_UnreferencedLabel, "label1").WithLocation(6, 9));
+                    // (19,13): error CS0139: No enclosing loop out of which to break or continue
+                    //             break;
+                    Diagnostic(ErrorCode.ERR_NoBreakOrCont, "break;").WithLocation(19, 13),
+                    // (24,13): error CS0139: No enclosing loop out of which to break or continue
+                    //             continue;
+                    Diagnostic(ErrorCode.ERR_NoBreakOrCont, "continue;").WithLocation(24, 13),
+                    // (14,13): error CS0159: No such label 'label1' within the scope of the goto statement
+                    //             goto label1;
+                    Diagnostic(ErrorCode.ERR_LabelNotFound, "goto").WithArguments("label1").WithLocation(14, 13));
         }
 
         [Fact]
@@ -1513,7 +1510,7 @@ class c
 }");
 
             comp.VerifyDiagnostics(
-                // (6,83): error CS1623: Iterators cannot have ref or out parameters
+                // (6,83): error CS1623: Iterators cannot have ref, in or out parameters
                 //         System.Collections.Generic.IEnumerable<string> getGoo(int count, out bool goobar)
                 Diagnostic(ErrorCode.ERR_BadIteratorArgType, "output"),
                 // (6,56): error CS0177: The out parameter 'goobar' must be assigned to before control leaves the current method
@@ -1546,7 +1543,7 @@ class c
 }");
 
             comp.VerifyDiagnostics(
-                // (6,83): error CS1623: Iterators cannot have ref or out parameters
+                // (6,83): error CS1623: Iterators cannot have ref, in or out parameters
                 //         System.Collections.Generic.IEnumerable<string> getGoo(int count, out bool goobar)
                 Diagnostic(ErrorCode.ERR_BadIteratorArgType, "output"),
                 // (6,56): error CS0177: The out parameter 'goobar' must be assigned to before control leaves the current method

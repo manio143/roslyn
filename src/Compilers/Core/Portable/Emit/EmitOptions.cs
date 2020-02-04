@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Immutable;
@@ -92,7 +94,7 @@ namespace Microsoft.CodeAnalysis.Emit
 
         /// <summary>
         /// A crypto hash algorithm used to calculate PDB Checksum stored in the PE/COFF File.
-        /// If not specified (the value is <code>default(HashAlgorithmName)</code>) the checksum is not calculated.
+        /// If not specified (the value is <c>default(HashAlgorithmName)</c>) the checksum is not calculated.
         /// </summary>
         public HashAlgorithmName PdbChecksumAlgorithm { get; private set; }
 
@@ -311,7 +313,7 @@ namespace Microsoft.CodeAnalysis.Emit
 
             if (PdbFilePath != null && !PathUtilities.IsValidFilePath(PdbFilePath))
             {
-                diagnostics.Add(messageProvider.CreateDiagnostic(messageProvider.FTL_InputFileNameTooLong, Location.None, PdbFilePath));
+                diagnostics.Add(messageProvider.CreateDiagnostic(messageProvider.FTL_InvalidInputFileName, Location.None, PdbFilePath));
             }
         }
 

@@ -1,11 +1,15 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CodeStyle;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.CodeStyle;
 using Microsoft.CodeAnalysis.CSharp.ImplementAbstractClass;
+using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Diagnostics;
 using Microsoft.CodeAnalysis.ImplementType;
@@ -23,16 +27,19 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.ImplementAbstractClass
 
         private IDictionary<OptionKey, object> AllOptionsOff =>
             OptionsSet(
-                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedMethods, CSharpCodeStyleOptions.NeverWithNoneEnforcement),
-                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedConstructors, CSharpCodeStyleOptions.NeverWithNoneEnforcement),
-                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedOperators, CSharpCodeStyleOptions.NeverWithNoneEnforcement),
-                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, CSharpCodeStyleOptions.NeverWithNoneEnforcement),
-                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, CSharpCodeStyleOptions.NeverWithNoneEnforcement),
-                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedIndexers, CSharpCodeStyleOptions.NeverWithNoneEnforcement));
+                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedMethods, CSharpCodeStyleOptions.NeverWithSilentEnforcement),
+                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedConstructors, CSharpCodeStyleOptions.NeverWithSilentEnforcement),
+                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedOperators, CSharpCodeStyleOptions.NeverWithSilentEnforcement),
+                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, CSharpCodeStyleOptions.NeverWithSilentEnforcement),
+                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, CSharpCodeStyleOptions.NeverWithSilentEnforcement),
+                 SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedIndexers, CSharpCodeStyleOptions.NeverWithSilentEnforcement));
 
         internal Task TestAllOptionsOffAsync(
-            string initialMarkup, string expectedMarkup,
-            int index = 0, IDictionary<OptionKey, object> options = null)
+            string initialMarkup,
+            string expectedMarkup,
+            int index = 0,
+            IDictionary<OptionKey, object> options = null,
+            ParseOptions parseOptions = null)
         {
             options = options ?? new Dictionary<OptionKey, object>();
             foreach (var kvp in AllOptionsOff)
@@ -41,8 +48,11 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.ImplementAbstractClass
             }
 
             return TestInRegularAndScriptAsync(
-                initialMarkup, expectedMarkup,
-                index: index, options: options);
+                initialMarkup,
+                expectedMarkup,
+                index: index,
+                options: options,
+                parseOptions: parseOptions);
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsImplementAbstractClass)]
@@ -432,7 +442,7 @@ class b : d
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsImplementAbstractClass)]
-        public async Task TestOptionalStructParameter()
+        public async Task TestOptionalStructParameter_CSharp7()
         {
             await TestAllOptionsOffAsync(
 @"struct b
@@ -459,6 +469,41 @@ abstract class d
 class c : d
 {
     public override void goo(b x = default(b))
+    {
+        throw new System.NotImplementedException();
+    }
+}",
+                parseOptions: TestOptions.Regular7);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsImplementAbstractClass)]
+        public async Task TestOptionalStructParameter()
+        {
+            await TestAllOptionsOffAsync(
+@"struct b
+{
+}
+
+abstract class d
+{
+    public abstract void goo(b x = new b());
+}
+
+class [|c|] : d
+{
+}",
+@"struct b
+{
+}
+
+abstract class d
+{
+    public abstract void goo(b x = new b());
+}
+
+class c : d
+{
+    public override void goo(b x = default)
     {
         throw new System.NotImplementedException();
     }
@@ -1175,7 +1220,7 @@ class [|T|] : A
 class T : A
 {
     public override void M(int x) => throw new System.NotImplementedException();
-}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedMethods, CSharpCodeStyleOptions.WhenPossibleWithNoneEnforcement));
+}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedMethods, CSharpCodeStyleOptions.WhenPossibleWithSilentEnforcement));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1199,7 +1244,7 @@ class [|T|] : A
 class T : A
 {
     public override int M => throw new System.NotImplementedException();
-}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, CSharpCodeStyleOptions.WhenPossibleWithNoneEnforcement));
+}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, CSharpCodeStyleOptions.WhenPossibleWithSilentEnforcement));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1230,8 +1275,8 @@ class T : A
         }
     }
 }", options: OptionsSet(
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, ExpressionBodyPreference.WhenPossible, NotificationOption.None),
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.Never, NotificationOption.None)));
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, ExpressionBodyPreference.WhenPossible, NotificationOption.Silent),
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.Never, NotificationOption.Silent)));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1267,8 +1312,8 @@ class T : A
         }
     }
 }", options: OptionsSet(
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, ExpressionBodyPreference.WhenPossible, NotificationOption.None),
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.Never, NotificationOption.None)));
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, ExpressionBodyPreference.WhenPossible, NotificationOption.Silent),
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.Never, NotificationOption.Silent)));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1292,7 +1337,7 @@ class [|T|] : A
 class T : A
 {
     public override int this[int i] => throw new System.NotImplementedException();
-}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedIndexers, CSharpCodeStyleOptions.WhenPossibleWithNoneEnforcement));
+}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedIndexers, CSharpCodeStyleOptions.WhenPossibleWithSilentEnforcement));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1323,8 +1368,8 @@ class T : A
         }
     }
 }", options: OptionsSet(
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedIndexers, ExpressionBodyPreference.WhenPossible, NotificationOption.None),
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.Never, NotificationOption.None)));
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedIndexers, ExpressionBodyPreference.WhenPossible, NotificationOption.Silent),
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.Never, NotificationOption.Silent)));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1360,8 +1405,8 @@ class T : A
         }
     }
 }", options: OptionsSet(
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedIndexers, ExpressionBodyPreference.WhenPossible, NotificationOption.None),
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.Never, NotificationOption.None)));
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedIndexers, ExpressionBodyPreference.WhenPossible, NotificationOption.Silent),
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.Never, NotificationOption.Silent)));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1386,8 +1431,8 @@ class T : A
 {
     public override int M { get => throw new System.NotImplementedException(); }
 }", options: OptionsSet(
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, ExpressionBodyPreference.Never, NotificationOption.None),
-    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.WhenPossible, NotificationOption.None)));
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedProperties, ExpressionBodyPreference.Never, NotificationOption.Silent),
+    SingleOption(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, ExpressionBodyPreference.WhenPossible, NotificationOption.Silent)));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1411,7 +1456,7 @@ class [|T|] : A
 class T : A
 {
     public override int M { set => throw new System.NotImplementedException(); }
-}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, CSharpCodeStyleOptions.WhenPossibleWithNoneEnforcement));
+}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, CSharpCodeStyleOptions.WhenPossibleWithSilentEnforcement));
         }
 
         [WorkItem(581500, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/581500")]
@@ -1435,7 +1480,7 @@ class [|T|] : A
 class T : A
 {
     public override int M { get => throw new System.NotImplementedException(); set => throw new System.NotImplementedException(); }
-}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, CSharpCodeStyleOptions.WhenPossibleWithNoneEnforcement));
+}", options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedAccessors, CSharpCodeStyleOptions.WhenPossibleWithSilentEnforcement));
         }
 
         [WorkItem(15387, "https://github.com/dotnet/roslyn/issues/15387")]
@@ -1509,7 +1554,7 @@ namespace My
 
         [WorkItem(17562, "https://github.com/dotnet/roslyn/issues/17562")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsImplementAbstractClass)]
-        public async Task TestNullableOptionalParameters()
+        public async Task TestNullableOptionalParameters_CSharp7()
         {
             await TestInRegularAndScriptAsync(
 @"struct V { }
@@ -1530,6 +1575,75 @@ abstract class B
 sealed class D : B
 {
     public override void M1(int i = 0, string s = null, int? j = null, V v = default(V))
+    {
+        throw new System.NotImplementedException();
+    }
+
+    public override void M2<T>(T? i = null)
+    {
+        throw new System.NotImplementedException();
+    }
+}",
+                parseOptions: TestOptions.Regular7);
+        }
+
+        [WorkItem(17562, "https://github.com/dotnet/roslyn/issues/17562")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsImplementAbstractClass)]
+        public async Task TestNullableOptionalParametersCSharp7()
+        {
+            await TestAsync(
+@"struct V { }
+abstract class B
+{
+    public abstract void M1(int i = 0, string s = null, int? j = null, V v = default(V));
+    public abstract void M2<T>(T? i = null) where T : struct;
+}
+sealed class [|D|] : B
+{
+}",
+@"struct V { }
+abstract class B
+{
+    public abstract void M1(int i = 0, string s = null, int? j = null, V v = default(V));
+    public abstract void M2<T>(T? i = null) where T : struct;
+}
+sealed class D : B
+{
+    public override void M1(int i = 0, string s = null, int? j = null, V v = default(V))
+    {
+        throw new System.NotImplementedException();
+    }
+
+    public override void M2<T>(T? i = null)
+    {
+        throw new System.NotImplementedException();
+    }
+}", parseOptions: new CSharpParseOptions(LanguageVersion.CSharp7));
+        }
+
+        [WorkItem(17562, "https://github.com/dotnet/roslyn/issues/17562")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsImplementAbstractClass)]
+        public async Task TestNullableOptionalParameters()
+        {
+            await TestInRegularAndScriptAsync(
+@"struct V { }
+abstract class B
+{
+    public abstract void M1(int i = 0, string s = null, int? j = null, V v = default(V));
+    public abstract void M2<T>(T? i = null) where T : struct;
+}
+sealed class [|D|] : B
+{
+}",
+@"struct V { }
+abstract class B
+{
+    public abstract void M1(int i = 0, string s = null, int? j = null, V v = default(V));
+    public abstract void M2<T>(T? i = null) where T : struct;
+}
+sealed class D : B
+{
+    public override void M1(int i = 0, string s = null, int? j = null, V v = default)
     {
         throw new System.NotImplementedException();
     }
@@ -1685,7 +1799,7 @@ public class Test : TestParent
 }");
         }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsImplementInterface)]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsImplementAbstractClass)]
         public async Task TestUnmanagedConstraint()
         {
             await TestInRegularAndScriptAsync(

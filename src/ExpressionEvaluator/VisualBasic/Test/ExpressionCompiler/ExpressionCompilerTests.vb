@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Globalization
@@ -170,6 +172,45 @@ End Class
                 resultProperties:=resultProperties,
                 errorMessage:=errorMessage)
             Assert.Equal("error BC30451: 'x' is not declared. It may be inaccessible due to its protection level.", errorMessage)
+        End Sub
+
+        <Fact>
+        Public Sub GenericWithInterfaceConstraint()
+            Const source = "
+Public Interface I
+    Property Key As String
+End Interface
+
+Class C
+    Public Shared Sub M(Of T As I)(tt As T)
+    End Sub
+End Class
+"
+            Dim compilation0 = CreateCompilationWithMscorlib40(source, options:=TestOptions.DebugDll)
+            WithRuntimeInstance(
+                compilation0,
+                Sub(runtime)
+                    Dim context = CreateMethodContext(runtime, "C.M")
+                    Dim errorMessage As String = Nothing
+                    Dim testData = New CompilationTestData()
+                    Dim result = context.CompileExpression(expr:="tt.Key", error:=errorMessage, testData:=testData)
+                    Dim methodData = testData.GetMethodData("<>x.<>m0(Of T)(T)")
+                    Dim method = methodData.Method
+                    Assert.Equal(1, method.Parameters.Length)
+                    Dim eeTypeParameterSymbol = DirectCast(method.Parameters(0).Type, EETypeParameterSymbol)
+                    Assert.Equal(1, eeTypeParameterSymbol.ConstraintTypesNoUseSiteDiagnostics.Length)
+                    Assert.Equal("I", eeTypeParameterSymbol.ConstraintTypesNoUseSiteDiagnostics(0).Name)
+
+                    methodData.VerifyIL(
+"{
+  // Code size       14 (0xe)
+  .maxstack  1
+  IL_0000:  ldarga.s   V_0
+  IL_0002:  constrained. ""T""
+  IL_0008:  callvirt   ""Function I.get_Key() As String""
+  IL_000d:  ret
+}")
+                End Sub)
         End Sub
 
         <Fact>
@@ -2246,7 +2287,7 @@ End Class"
   IL_0000:  ldc.i4.5
   IL_0001:  newarr     ""Integer""
   IL_0006:  dup
-  IL_0007:  ldtoken    ""<PrivateImplementationDetails>.__StaticArrayInitTypeSize=20 <PrivateImplementationDetails>.1036C5F8EF306104BD582D73E555F4DAE8EECB24""
+  IL_0007:  ldtoken    ""<PrivateImplementationDetails>.__StaticArrayInitTypeSize=20 <PrivateImplementationDetails>.4F6ADDC9659D6FB90FE94B6688A79F2A1FA8D36EC43F8F3E1D9B6528C448A384""
   IL_000c:  call       ""Sub System.Runtime.CompilerServices.RuntimeHelpers.InitializeArray(System.Array, System.RuntimeFieldHandle)""
   IL_0011:  ret
 }")

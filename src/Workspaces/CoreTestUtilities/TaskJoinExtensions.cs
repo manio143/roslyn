@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable enable
 
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +18,26 @@ namespace Roslyn.Test.Utilities
         /// during the join operation.
         /// </summary>
         public static void JoinUsingDispatcher(this Task task, CancellationToken cancellationToken)
+        {
+            JoinUsingDispatcherNoResult(task, cancellationToken);
+
+            // Handle task completion by throwing the appropriate exception on failure
+            task.GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// Joins a <see cref="Task{TResult}"/> to the current thread with a <see cref="Dispatcher"/> message pump in
+        /// place during the join operation.
+        /// </summary>
+        public static TResult JoinUsingDispatcher<TResult>(this Task<TResult> task, CancellationToken cancellationToken)
+        {
+            JoinUsingDispatcherNoResult(task, cancellationToken);
+
+            // Handle task completion by throwing the appropriate exception on failure
+            return task.GetAwaiter().GetResult();
+        }
+
+        private static void JoinUsingDispatcherNoResult(Task task, CancellationToken cancellationToken)
         {
             var frame = new DispatcherFrame();
 
@@ -35,9 +59,6 @@ namespace Roslyn.Test.Utilities
                 Assert.True(cancellationToken.IsCancellationRequested);
                 cancellationToken.ThrowIfCancellationRequested();
             }
-
-            // Handle task completion by throwing the appropriate exception on failure
-            task.GetAwaiter().GetResult();
         }
     }
 }

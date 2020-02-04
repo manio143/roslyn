@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Threading
@@ -13,6 +15,7 @@ Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.Text.Shared.Extensions
 Imports Microsoft.VisualStudio.Composition
 Imports Microsoft.VisualStudio.Text
+Imports Microsoft.VisualStudio.Language.Intellisense
 
 Namespace Microsoft.CodeAnalysis.Editor.UnitTests.NavigableSymbols
 
@@ -42,6 +45,34 @@ class {|target:C|}
             End Using
         End Function
 
+        <WorkItem(23030, "https://github.com/dotnet/roslyn/issues/23030")>
+        <WpfFact, Trait(Traits.Feature, Traits.Features.NavigableSymbols)>
+        Public Async Function TestCharpLiteral() As Task
+            Dim markup = "int x = 1$$23;"
+            Dim text As String = Nothing
+            Dim position As Integer? = Nothing
+            Dim spans As IDictionary(Of String, ImmutableArray(Of TextSpan)) = Nothing
+            MarkupTestFile.GetPositionAndSpans(markup, text, position, spans)
+
+            Using workspace = TestWorkspace.CreateCSharp(text, exportProvider:=s_exportProviderFactory.CreateExportProvider())
+                Await TestNotNavigated(workspace, position.Value, spans)
+            End Using
+        End Function
+
+        <WorkItem(23030, "https://github.com/dotnet/roslyn/issues/23030")>
+        <WpfFact, Trait(Traits.Feature, Traits.Features.NavigableSymbols)>
+        Public Async Function TestCharpStringLiteral() As Task
+            Dim markup = "string x = ""w$$ow"";"
+            Dim text As String = Nothing
+            Dim position As Integer? = Nothing
+            Dim spans As IDictionary(Of String, ImmutableArray(Of TextSpan)) = Nothing
+            MarkupTestFile.GetPositionAndSpans(markup, text, position, spans)
+
+            Using workspace = TestWorkspace.CreateCSharp(text, exportProvider:=s_exportProviderFactory.CreateExportProvider())
+                Await TestNotNavigated(workspace, position.Value, spans)
+            End Using
+        End Function
+
         <WpfFact, Trait(Traits.Feature, Traits.Features.NavigableSymbols)>
         Public Async Function TestVB() As Task
             Dim markup = "
@@ -58,14 +89,46 @@ End Class"
             End Using
         End Function
 
-        Private Async Function TestNavigated(workspace As TestWorkspace, position As Integer, spans As IDictionary(Of String, ImmutableArray(Of TextSpan))) As Task
-            Dim presenter = {New Lazy(Of IStreamingFindUsagesPresenter)(Function() New MockStreamingFindUsagesPresenter(Sub() Return))}
+        <WpfFact, Trait(Traits.Feature, Traits.Features.NavigableSymbols)>
+        <WorkItem(23030, "https://github.com/dotnet/roslyn/issues/23030")>
+        Public Async Function TestVBLiteral() As Task
+            Dim markup = "Dim x as Integer = 1$$23"
+            Dim text As String = Nothing
+            Dim position As Integer? = Nothing
+            Dim spans As IDictionary(Of String, ImmutableArray(Of TextSpan)) = Nothing
+            MarkupTestFile.GetPositionAndSpans(markup, text, position, spans)
+
+            Using workspace = TestWorkspace.CreateVisualBasic(text, exportProvider:=s_exportProviderFactory.CreateExportProvider())
+                Await TestNotNavigated(workspace, position.Value, spans)
+            End Using
+        End Function
+
+        <WpfFact, Trait(Traits.Feature, Traits.Features.NavigableSymbols)>
+        <WorkItem(23030, "https://github.com/dotnet/roslyn/issues/23030")>
+        Public Async Function TestVBStringLiteral() As Task
+            Dim markup = "Dim x as String = ""w$$ow"";"
+            Dim text As String = Nothing
+            Dim position As Integer? = Nothing
+            Dim spans As IDictionary(Of String, ImmutableArray(Of TextSpan)) = Nothing
+            MarkupTestFile.GetPositionAndSpans(markup, text, position, spans)
+
+            Using workspace = TestWorkspace.CreateVisualBasic(text, exportProvider:=s_exportProviderFactory.CreateExportProvider())
+                Await TestNotNavigated(workspace, position.Value, spans)
+            End Using
+        End Function
+
+        Private Function ExtractSymbol(workspace As TestWorkspace, position As Integer, spans As IDictionary(Of String, ImmutableArray(Of TextSpan))) As Task(Of INavigableSymbol)
+            Dim presenter = New MockStreamingFindUsagesPresenter(Sub() Return)
             Dim service = New NavigableSymbolService(TestWaitIndicator.Default, presenter)
             Dim view = workspace.Documents.First().GetTextView()
             Dim buffer = workspace.Documents.First().GetTextBuffer()
             Dim triggerSpan = New SnapshotSpan(buffer.CurrentSnapshot, New Span(position, 0))
             Dim source = service.TryCreateNavigableSymbolSource(view, buffer)
-            Dim symbol = Await source.GetNavigableSymbolAsync(triggerSpan, CancellationToken.None)
+            Return source.GetNavigableSymbolAsync(triggerSpan, CancellationToken.None)
+        End Function
+
+        Private Async Function TestNavigated(workspace As TestWorkspace, position As Integer, spans As IDictionary(Of String, ImmutableArray(Of TextSpan))) As Task
+            Dim symbol = Await ExtractSymbol(workspace, position, spans)
 
             Dim highlightedSpan = spans("highlighted").First()
             Dim navigationTarget = spans("target").First()
@@ -80,6 +143,11 @@ End Class"
             Assert.Equal(True, navigationService.TryNavigateToPositionReturnValue)
             Assert.Equal(True, navigationService.TryNavigateToSpanReturnValue)
             Assert.Equal(navigationTarget, navigationService.ProvidedTextSpan)
+        End Function
+
+        Private Async Function TestNotNavigated(workspace As TestWorkspace, position As Integer, spans As IDictionary(Of String, ImmutableArray(Of TextSpan))) As Task
+            Dim symbol = Await ExtractSymbol(workspace, position, spans)
+            Assert.Null(symbol)
         End Function
     End Class
 End Namespace

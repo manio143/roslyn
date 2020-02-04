@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
@@ -95,7 +97,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 End If
 
                 If Not format.MiscellaneousOptions.IncludesOption(SymbolDisplayMiscellaneousOptions.ExpandNullable) Then
-                    If IsNullableType(symbol) AndAlso symbol IsNot symbol.OriginalDefinition Then
+                    If ITypeSymbolHelpers.IsNullableType(symbol) AndAlso symbol IsNot symbol.OriginalDefinition Then
                         symbol.TypeArguments(0).Accept(Me.NotFirstVisitor())
                         AddPunctuation(SyntaxKind.QuestionToken)
                         Return
@@ -370,7 +372,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 If Not element.IsImplicitlyDeclared Then
                     builder.Add(CreatePart(SymbolDisplayPartKind.FieldName, symbol, element.Name, noEscaping:=False))
                     AddSpace()
-                    AddPunctuation(SyntaxKind.AsKeyword)
+                    AddKeyword(SyntaxKind.AsKeyword)
                     AddSpace()
                 End If
 
@@ -552,8 +554,5 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
         End Sub
 
-        Private Shared Function IsNullableType(symbol As INamedTypeSymbol) As Boolean
-            Return symbol.OriginalDefinition.SpecialType = SpecialType.System_Nullable_T
-        End Function
     End Class
 End Namespace

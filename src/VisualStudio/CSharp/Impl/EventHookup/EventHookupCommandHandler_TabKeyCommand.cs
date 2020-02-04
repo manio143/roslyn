@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Immutable;
@@ -23,7 +25,6 @@ using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Text.Editor.Commanding.Commands;
 using Roslyn.Utilities;
-using VSCommanding = Microsoft.VisualStudio.Commanding;
 
 namespace Microsoft.CodeAnalysis.Editor.CSharp.EventHookup
 {
@@ -48,12 +49,12 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.EventHookup
             HandleTabWorker(args.TextView, args.SubjectBuffer, nextHandler, CancellationToken.None);
         }
 
-        public VSCommanding.CommandState GetCommandState(TabKeyCommandArgs args, Func<VSCommanding.CommandState> nextHandler)
+        public CommandState GetCommandState(TabKeyCommandArgs args, Func<CommandState> nextHandler)
         {
             AssertIsForeground();
             if (EventHookupSessionManager.CurrentSession != null)
             {
-                return VSCommanding.CommandState.Available;
+                return CommandState.Available;
             }
             else
             {
@@ -95,14 +96,6 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.EventHookup
                 return;
             }
 
-            // If QuickInfoSession is null, then Tab was pressed before the background task
-            // finished (that is, the Wait call above actually needed to wait). Since we know an
-            // event hookup was found, we should set everything up now because the background task 
-            // will not have a chance to set things up until after this Tab has been handled, and
-            // by then it's too late. When the background task alerts that it found an event hookup
-            // nothing will change because QuickInfoSession will already be set.
-            EventHookupSessionManager.EventHookupFoundInSession(EventHookupSessionManager.CurrentSession);
-
             // This tab means we should generate the event handler method. Begin the code
             // generation process.
             GenerateAndAddEventHandler(textView, subjectBuffer, eventHandlerMethodName, nextHandler, cancellationToken);
@@ -124,7 +117,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.EventHookup
                     return;
                 }
 
-                Document document = textView.TextSnapshot.GetOpenDocumentInCurrentContextWithChanges();
+                var document = textView.TextSnapshot.GetOpenDocumentInCurrentContextWithChanges();
                 if (document == null)
                 {
                     Contract.Fail("Event Hookup could not find the document for the IBufferView.");
@@ -186,7 +179,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.EventHookup
                                                .Single().Span.End;
 
             return document.Project.Solution.WithDocumentText(
-                formattedDocument.Id, formattedDocument.GetTextAsync(cancellationToken).WaitAndGetResult(cancellationToken));
+                formattedDocument.Id, formattedDocument.GetTextSynchronously(cancellationToken));
         }
 
         private Document AddMethodNameAndAnnotationsToSolution(
@@ -210,7 +203,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.EventHookup
 
             // Next, perform a textual insertion of the event handler method name.
             var textChange = new TextChange(new TextSpan(position, 0), textToInsert);
-            var newText = document.GetTextAsync(cancellationToken).WaitAndGetResult(cancellationToken).WithChanges(textChange);
+            var newText = document.GetTextSynchronously(cancellationToken).WithChanges(textChange);
             var documentWithNameAdded = document.WithText(newText);
 
             // Now find the event hookup again to add the appropriate annotations.
@@ -251,12 +244,12 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.EventHookup
         }
 
         private IMethodSymbol GetMethodSymbol(
-            SemanticDocument document,
+            SemanticDocument semanticDocument,
             string eventHandlerMethodName,
             AssignmentExpressionSyntax eventHookupExpression,
             CancellationToken cancellationToken)
         {
-            var semanticModel = document.SemanticModel as SemanticModel;
+            var semanticModel = semanticDocument.SemanticModel as SemanticModel;
             var symbolInfo = semanticModel.GetSymbolInfo(eventHookupExpression.Left, cancellationToken);
 
             var symbol = symbolInfo.Symbol;
@@ -265,27 +258,28 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.EventHookup
                 return null;
             }
 
-            var typeInference = document.Project.LanguageServices.GetService<ITypeInferenceService>();
+            var typeInference = semanticDocument.Document.GetLanguageService<ITypeInferenceService>();
             var delegateType = typeInference.InferDelegateType(semanticModel, eventHookupExpression.Right, cancellationToken);
             if (delegateType == null || delegateType.DelegateInvokeMethod == null)
             {
                 return null;
             }
 
-            var syntaxFactory = document.Project.LanguageServices.GetService<SyntaxGenerator>();
+            var syntaxFactory = semanticDocument.Document.GetLanguageService<SyntaxGenerator>();
+            var delegateInvokeMethod = delegateType.DelegateInvokeMethod.RemoveInaccessibleAttributesAndAttributesOfTypes(semanticDocument.SemanticModel.Compilation.Assembly);
 
             return CodeGenerationSymbolFactory.CreateMethodSymbol(
-                attributes: default(ImmutableArray<AttributeData>),
+                attributes: default,
                 accessibility: Accessibility.Private,
                 modifiers: new DeclarationModifiers(isStatic: eventHookupExpression.IsInStaticContext()),
-                returnType: delegateType.DelegateInvokeMethod.ReturnType,
-                refKind: delegateType.DelegateInvokeMethod.RefKind,
+                returnType: delegateInvokeMethod.ReturnType,
+                refKind: delegateInvokeMethod.RefKind,
                 explicitInterfaceImplementations: default,
                 name: eventHandlerMethodName,
-                typeParameters: default(ImmutableArray<ITypeParameterSymbol>),
-                parameters: delegateType.DelegateInvokeMethod.Parameters,
+                typeParameters: default,
+                parameters: delegateInvokeMethod.Parameters,
                 statements: ImmutableArray.Create(
-                    CodeGenerationHelpers.GenerateThrowStatement(syntaxFactory, document, "System.NotImplementedException", cancellationToken)));
+                    CodeGenerationHelpers.GenerateThrowStatement(syntaxFactory, semanticDocument, "System.NotImplementedException")));
         }
 
         private void BeginInlineRename(Workspace workspace, ITextView textView, ITextBuffer subjectBuffer, int plusEqualTokenEndPosition, CancellationToken cancellationToken)

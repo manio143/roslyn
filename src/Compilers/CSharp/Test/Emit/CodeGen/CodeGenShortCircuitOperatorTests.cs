@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
 using Microsoft.CodeAnalysis.Test.Utilities;
@@ -3704,7 +3706,7 @@ class Program
   IL_000e:  call       ""Program.C1 Program.C1?.GetValueOrDefault()""
   IL_0013:  stloc.0
   IL_0014:  ldloca.s   V_0
-  IL_0016:  call       ""int Program.C1.x.get""
+  IL_0016:  call       ""readonly int Program.C1.x.get""
   IL_001b:  ret
 }
 ").VerifyIL("Program.Test2(Program.C1?)", @"
@@ -3725,7 +3727,7 @@ class Program
   IL_0016:  call       ""Program.C1 Program.C1?.GetValueOrDefault()""
   IL_001b:  stloc.2
   IL_001c:  ldloca.s   V_2
-  IL_001e:  call       ""int? Program.C1.y.get""
+  IL_001e:  call       ""readonly int? Program.C1.y.get""
   IL_0023:  stloc.0
   IL_0024:  ldloca.s   V_0
   IL_0026:  call       ""bool int?.HasValue.get""
@@ -3793,7 +3795,7 @@ class Program
   IL_000d:  call       ""Program.C1 Program.C1?.GetValueOrDefault()""
   IL_0012:  stloc.0
   IL_0013:  ldloca.s   V_0
-  IL_0015:  call       ""int Program.C1.x.get""
+  IL_0015:  call       ""readonly int Program.C1.x.get""
   IL_001a:  ret
 }
 
@@ -3816,7 +3818,7 @@ class Program
   IL_0015:  call       ""Program.C1 Program.C1?.GetValueOrDefault()""
   IL_001a:  stloc.2
   IL_001b:  ldloca.s   V_2
-  IL_001d:  call       ""int? Program.C1.y.get""
+  IL_001d:  call       ""readonly int? Program.C1.y.get""
   IL_0022:  stloc.0
   IL_0023:  ldloca.s   V_0
   IL_0025:  call       ""bool int?.HasValue.get""
@@ -3826,6 +3828,48 @@ class Program
   IL_002f:  ldloca.s   V_0
   IL_0031:  call       ""int int?.GetValueOrDefault()""
   IL_0036:  ret
+}
+");
+        }
+
+        [Fact]
+        public void ConditionalMemberAccessCoalesceDefault()
+        {
+            var source = @"
+class Program
+{
+    class C1
+    {
+        public int x { get; set; }
+    }
+
+    static void Main()
+    {
+        var c = new C1() { x = 42 };
+        System.Console.WriteLine(Test(c));
+        System.Console.WriteLine(Test(null));
+    }
+
+    static int Test(C1 c)
+    {
+        return c?.x ?? 0;
+    }
+}
+";
+            var comp = CompileAndVerify(source, expectedOutput: @"
+42
+0");
+            comp.VerifyIL("Program.Test(Program.C1)", @"
+{
+  // Code size       12 (0xc)
+  .maxstack  1
+  IL_0000:  ldarg.0
+  IL_0001:  brtrue.s   IL_0005
+  IL_0003:  ldc.i4.0
+  IL_0004:  ret
+  IL_0005:  ldarg.0
+  IL_0006:  call       ""int Program.C1.x.get""
+  IL_000b:  ret
 }
 ");
         }
@@ -5966,7 +6010,7 @@ OverflowException");
   IL_000f:  ret
 }").VerifyIL("C.HasLengthChecked", @"
 {
-  // Code size       49 (0x31)
+  // Code size       48 (0x30)
   .maxstack  2
   .locals init (int? V_0,
                 int V_1,
@@ -5987,12 +6031,11 @@ OverflowException");
   IL_001d:  ldloca.s   V_0
   IL_001f:  call       ""int int?.GetValueOrDefault()""
   IL_0024:  ldloc.1
-  IL_0025:  beq.s      IL_0029
-  IL_0027:  ldc.i4.0
-  IL_0028:  ret
-  IL_0029:  ldloca.s   V_0
-  IL_002b:  call       ""bool int?.HasValue.get""
-  IL_0030:  ret
+  IL_0025:  ceq
+  IL_0027:  ldloca.s   V_0
+  IL_0029:  call       ""bool int?.HasValue.get""
+  IL_002e:  and
+  IL_002f:  ret
 }");
         }
 
@@ -6103,7 +6146,7 @@ class C
 
             verifier.VerifyIL("C.NotHasLength", @"
 {
-  // Code size       43 (0x2b)
+  // Code size       42 (0x2a)
   .maxstack  2
   .locals init (int? V_0)
   IL_0000:  ldarg.0
@@ -6119,14 +6162,13 @@ class C
   IL_0014:  stloc.0
   IL_0015:  ldloca.s   V_0
   IL_0017:  call       ""int int?.GetValueOrDefault()""
-  IL_001c:  beq.s      IL_0020
-  IL_001e:  ldc.i4.1
-  IL_001f:  ret
-  IL_0020:  ldloca.s   V_0
-  IL_0022:  call       ""bool int?.HasValue.get""
-  IL_0027:  ldc.i4.0
-  IL_0028:  ceq
-  IL_002a:  ret
+  IL_001c:  ceq
+  IL_001e:  ldloca.s   V_0
+  IL_0020:  call       ""bool int?.HasValue.get""
+  IL_0025:  and
+  IL_0026:  ldc.i4.0
+  IL_0027:  ceq
+  IL_0029:  ret
 }");
         }
 
@@ -6816,7 +6858,7 @@ class C
 
             verifier.VerifyIL("C.NotHasLength", @"
 {
-  // Code size       58 (0x3a)
+  // Code size       57 (0x39)
   .maxstack  2
   .locals init (int? V_0,
                 int V_1)
@@ -6837,14 +6879,13 @@ class C
   IL_0023:  stloc.0
   IL_0024:  ldloca.s   V_0
   IL_0026:  call       ""int int?.GetValueOrDefault()""
-  IL_002b:  beq.s      IL_002f
-  IL_002d:  ldc.i4.1
-  IL_002e:  ret
-  IL_002f:  ldloca.s   V_0
-  IL_0031:  call       ""bool int?.HasValue.get""
-  IL_0036:  ldc.i4.0
-  IL_0037:  ceq
-  IL_0039:  ret
+  IL_002b:  ceq
+  IL_002d:  ldloca.s   V_0
+  IL_002f:  call       ""bool int?.HasValue.get""
+  IL_0034:  and
+  IL_0035:  ldc.i4.0
+  IL_0036:  ceq
+  IL_0038:  ret
 }");
         }
 
@@ -7313,7 +7354,7 @@ class Program
   IL_002b:  ret
 }");
 
-            comp = CompileAndVerify(source, options: TestOptions.DebugExe, expectedOutput: @"", parseOptions:TestOptions.Regular.WithPEVerifyCompatFeature(), verify: Verification.Passes);
+            comp = CompileAndVerify(source, options: TestOptions.DebugExe, expectedOutput: @"", parseOptions: TestOptions.Regular.WithPEVerifyCompatFeature(), verify: Verification.Passes);
 
             comp.VerifyIL("Program.Main", @"
 {

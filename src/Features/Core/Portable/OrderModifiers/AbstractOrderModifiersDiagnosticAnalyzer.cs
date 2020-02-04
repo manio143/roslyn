@@ -1,15 +1,17 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
 using Microsoft.CodeAnalysis.CodeStyle;
 using Microsoft.CodeAnalysis.Diagnostics;
-using Microsoft.CodeAnalysis.Text;
-using Microsoft.CodeAnalysis.Options;
 using Microsoft.CodeAnalysis.LanguageServices;
+using Microsoft.CodeAnalysis.Options;
+using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.OrderModifiers
 {
-    internal abstract class AbstractOrderModifiersDiagnosticAnalyzer : AbstractCodeStyleDiagnosticAnalyzer
+    internal abstract class AbstractOrderModifiersDiagnosticAnalyzer : AbstractBuiltInCodeStyleDiagnosticAnalyzer
     {
         private readonly ISyntaxFactsService _syntaxFacts;
         private readonly Option<CodeStyleOption<string>> _option;
@@ -18,8 +20,11 @@ namespace Microsoft.CodeAnalysis.OrderModifiers
         protected AbstractOrderModifiersDiagnosticAnalyzer(
             ISyntaxFactsService syntaxFacts,
             Option<CodeStyleOption<string>> option,
-            AbstractOrderModifiersHelpers helpers)
+            AbstractOrderModifiersHelpers helpers,
+            string language)
             : base(IDEDiagnosticIds.OrderModifiersDiagnosticId,
+                   option,
+                   language,
                    new LocalizableResourceString(nameof(FeaturesResources.Order_modifiers), FeaturesResources.ResourceManager, typeof(FeaturesResources)),
                    new LocalizableResourceString(nameof(FeaturesResources.Modifiers_are_not_ordered), FeaturesResources.ResourceManager, typeof(FeaturesResources)))
         {
@@ -28,13 +33,11 @@ namespace Microsoft.CodeAnalysis.OrderModifiers
             _helpers = helpers;
         }
 
-        public override DiagnosticAnalyzerCategory GetAnalyzerCategory() => DiagnosticAnalyzerCategory.SyntaxAnalysis;
-        public override bool OpenFileOnly(Workspace workspace) => false;
+        public override DiagnosticAnalyzerCategory GetAnalyzerCategory()
+            => DiagnosticAnalyzerCategory.SyntaxTreeWithoutSemanticsAnalysis;
 
         protected override void InitializeWorker(AnalysisContext context)
-        {
-            context.RegisterSyntaxTreeAction(AnalyzeSyntaxTree);
-        }
+            => context.RegisterSyntaxTreeAction(AnalyzeSyntaxTree);
 
         private void AnalyzeSyntaxTree(SyntaxTreeAnalysisContext context)
         {
@@ -54,31 +57,30 @@ namespace Microsoft.CodeAnalysis.OrderModifiers
                 return;
             }
 
-            var descriptor = GetDescriptorWithSeverity(option.Notification.Value);
-            Recurse(context, preferredOrder, descriptor, root);
+            Recurse(context, preferredOrder, option.Notification.Severity, root);
         }
 
         protected abstract void Recurse(
             SyntaxTreeAnalysisContext context,
             Dictionary<int, int> preferredOrder,
-            DiagnosticDescriptor descriptor,
+            ReportDiagnostic severity,
             SyntaxNode root);
 
         protected void CheckModifiers(
             SyntaxTreeAnalysisContext context,
             Dictionary<int, int> preferredOrder,
-            DiagnosticDescriptor descriptor,
+            ReportDiagnostic severity,
             SyntaxNode memberDeclaration)
         {
             var modifiers = _syntaxFacts.GetModifiers(memberDeclaration);
-            if (!IsOrdered(preferredOrder, modifiers))
+            if (!AbstractOrderModifiersHelpers.IsOrdered(preferredOrder, modifiers))
             {
-                if (descriptor.DefaultSeverity == DiagnosticSeverity.Hidden)
+                if (severity.WithDefaultSeverity(DiagnosticSeverity.Hidden) == ReportDiagnostic.Hidden)
                 {
                     // If the severity is hidden, put the marker on all the modifiers so that the
                     // user can bring up the fix anywhere in the modifier list.
                     context.ReportDiagnostic(
-                        Diagnostic.Create(descriptor, context.Tree.GetLocation(
+                        Diagnostic.Create(Descriptor, context.Tree.GetLocation(
                             TextSpan.FromBounds(modifiers.First().SpanStart, modifiers.Last().Span.End))));
                 }
                 else
@@ -86,29 +88,9 @@ namespace Microsoft.CodeAnalysis.OrderModifiers
                     // If the Severity is not hidden, then just put the user visible portion on the
                     // first token.  That way we don't 
                     context.ReportDiagnostic(
-                        Diagnostic.Create(descriptor, modifiers.First().GetLocation()));
+                        DiagnosticHelper.Create(Descriptor, modifiers.First().GetLocation(), severity, additionalLocations: null, properties: null));
                 }
             }
-        }
-
-        private bool IsOrdered(Dictionary<int, int> preferredOrder, SyntaxTokenList modifiers)
-        {
-            if (modifiers.Count >= 2)
-            {
-                var lastOrder = int.MinValue;
-                foreach (var modifier in modifiers)
-                {
-                    var currentOrder = preferredOrder.TryGetValue(modifier.RawKind, out var value) ? value : int.MaxValue;
-                    if (currentOrder < lastOrder)
-                    {
-                        return false;
-                    }
-
-                    lastOrder = currentOrder;
-                }
-            }
-
-            return true;
         }
     }
 }

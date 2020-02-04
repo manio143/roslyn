@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Globalization
 Imports Microsoft.CodeAnalysis.VisualBasic
@@ -140,6 +142,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End Get
         End Property
 
+        Public Overrides ReadOnly Property ERR_MultipleAnalyzerConfigsInSameDir As Integer
+            Get
+                Return ERRID.ERR_MultipleAnalyzerConfigsInSameDir
+            End Get
+        End Property
+
         ' command line:
         Public Overrides ReadOnly Property ERR_ExpectedSingleScript As Integer
             Get
@@ -159,9 +167,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End Get
         End Property
 
-        Public Overrides ReadOnly Property FTL_InputFileNameTooLong As Integer
+        Public Overrides ReadOnly Property FTL_InvalidInputFileName As Integer
             Get
-                Return ERRID.FTL_InputFileNameTooLong
+                Return ERRID.FTL_InvalidInputFileName
             End Get
         End Property
 

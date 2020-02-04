@@ -1,8 +1,11 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Linq;
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
 using Microsoft.CodeAnalysis.Test.Utilities;
+using Roslyn.Test.Utilities;
 using Xunit;
 
 namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Emit
@@ -1329,7 +1332,7 @@ public class Test
 }";
 
             var c = CreateCompilation(code, references: new[] { reference });
-            
+
             c.VerifyDiagnostics(
                 // (10,23): error CS0315: The type 'Test.S1' cannot be used as type parameter 'T' in the generic type or method 'TestRef.M<T>()'. There is no boxing conversion from 'Test.S1' to 'System.IComparable'.
                 //         new TestRef().M<S1>();
@@ -1341,6 +1344,51 @@ public class Test
             Assert.True(typeParameter.HasValueTypeConstraint);
             Assert.False(typeParameter.HasReferenceTypeConstraint);
             Assert.False(typeParameter.HasConstructorConstraint);
+        }
+
+        [Fact]
+        [WorkItem(25654, "https://github.com/dotnet/roslyn/issues/25654")]
+        public void UnmanagedConstraint_PointersTypeInference()
+        {
+            var code = @"
+unsafe class Program
+{
+    static void M<T>(T* a) where T : unmanaged
+    {
+        System.Console.WriteLine(typeof(T).FullName);
+    }
+    static void Main()
+    {
+        int x = 5;
+        M(&x);
+
+        double y = 5.5;
+        M(&y);
+    }
+}";
+
+            CompileAndVerify(code, options: TestOptions.UnsafeReleaseExe, verify: Verification.Fails, expectedOutput: @"
+System.Int32
+System.Double
+")
+                .VerifyIL("Program.Main", @"
+{
+  // Code size       29 (0x1d)
+  .maxstack  1
+  .locals init (int V_0, //x
+                double V_1) //y
+  IL_0000:  ldc.i4.5
+  IL_0001:  stloc.0
+  IL_0002:  ldloca.s   V_0
+  IL_0004:  conv.u
+  IL_0005:  call       ""void Program.M<int>(int*)""
+  IL_000a:  ldc.r8     5.5
+  IL_0013:  stloc.1
+  IL_0014:  ldloca.s   V_1
+  IL_0016:  conv.u
+  IL_0017:  call       ""void Program.M<double>(double*)""
+  IL_001c:  ret
+}");
         }
 
         private const string IsUnmanagedAttributeIL = @"

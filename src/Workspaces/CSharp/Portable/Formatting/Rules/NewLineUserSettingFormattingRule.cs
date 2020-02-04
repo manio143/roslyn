@@ -1,9 +1,16 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using Microsoft.CodeAnalysis;
+using System.Diagnostics;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Formatting.Rules;
+
+#if CODE_STYLE
+using OptionSet = Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions;
+#else
 using Microsoft.CodeAnalysis.Options;
+#endif
 
 namespace Microsoft.CodeAnalysis.CSharp.Formatting
 {
@@ -11,12 +18,15 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
     {
         private bool IsControlBlock(SyntaxNode node)
         {
+            Debug.Assert(node != null);
+
             if (node.Kind() == SyntaxKind.SwitchStatement)
             {
                 return true;
             }
 
-            var parentKind = node?.Parent.Kind();
+            var parentKind = node.Parent?.Kind();
+
             switch (parentKind.GetValueOrDefault())
             {
                 case SyntaxKind.IfStatement:
@@ -42,12 +52,14 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
             }
         }
 
-        public override AdjustSpacesOperation GetAdjustSpacesOperation(SyntaxToken previousToken, SyntaxToken currentToken, OptionSet optionSet, NextOperation<AdjustSpacesOperation> nextOperation)
+        public override AdjustSpacesOperation GetAdjustSpacesOperation(SyntaxToken previousToken, SyntaxToken currentToken, OptionSet optionSet, in NextGetAdjustSpacesOperation nextOperation)
         {
             var operation = nextOperation.Invoke();
 
             // } else in the if else context
-            if (previousToken.IsKind(SyntaxKind.CloseBraceToken) && currentToken.IsKind(SyntaxKind.ElseKeyword))
+            if (previousToken.IsKind(SyntaxKind.CloseBraceToken)
+                && currentToken.IsKind(SyntaxKind.ElseKeyword)
+                && previousToken.Parent.Parent == currentToken.Parent.Parent)
             {
                 if (!optionSet.GetOption(CSharpFormattingOptions.NewLineForElse))
                 {
@@ -163,7 +175,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
             return operation;
         }
 
-        public override AdjustNewLinesOperation GetAdjustNewLinesOperation(SyntaxToken previousToken, SyntaxToken currentToken, OptionSet optionSet, NextOperation<AdjustNewLinesOperation> nextOperation)
+        public override AdjustNewLinesOperation GetAdjustNewLinesOperation(SyntaxToken previousToken, SyntaxToken currentToken, OptionSet optionSet, in NextGetAdjustNewLinesOperation nextOperation)
         {
             var operation = nextOperation.Invoke();
 
@@ -200,7 +212,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
             // } else in the if else context
             if (previousToken.IsKind(SyntaxKind.CloseBraceToken) && currentToken.IsKind(SyntaxKind.ElseKeyword))
             {
-                if (optionSet.GetOption(CSharpFormattingOptions.NewLineForElse))
+                if (optionSet.GetOption(CSharpFormattingOptions.NewLineForElse)
+                    || previousToken.Parent.Parent != currentToken.Parent.Parent)
                 {
                     return CreateAdjustNewLinesOperation(1, AdjustNewLinesOption.PreserveLines);
                 }

@@ -1,20 +1,25 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Utilities;
+using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Shared.Extensions;
+using Microsoft.CodeAnalysis.Simplification;
 
 namespace Microsoft.CodeAnalysis.CSharp.Extensions
 {
     internal static partial class CastExpressionSyntaxExtensions
     {
-        private static ITypeSymbol GetOuterCastType(ExpressionSyntax expression, SemanticModel semanticModel, out bool parentIsOrAsExpression)
+        private static ITypeSymbol GetOuterCastType(ExpressionSyntax expression, SemanticModel semanticModel,
+            out bool parentIsIsOrAsExpression)
         {
             expression = expression.WalkUpParentheses();
-            parentIsOrAsExpression = false;
+            parentIsIsOrAsExpression = false;
 
             var parentNode = expression.Parent;
             if (parentNode == null)
@@ -22,9 +27,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
                 return null;
             }
 
-            if (parentNode.IsKind(SyntaxKind.CastExpression))
+            if (parentNode.IsKind(SyntaxKind.CastExpression, out CastExpressionSyntax castExpression))
             {
-                var castExpression = (CastExpressionSyntax)parentNode;
                 return semanticModel.GetTypeInfo(castExpression).Type;
             }
 
@@ -36,7 +40,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
             if (parentNode.IsKind(SyntaxKind.IsExpression) ||
                 parentNode.IsKind(SyntaxKind.AsExpression))
             {
-                parentIsOrAsExpression = true;
+                parentIsIsOrAsExpression = true;
                 return null;
             }
 
@@ -45,9 +49,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
                 return semanticModel.Compilation.GetSpecialType(SpecialType.System_Int32);
             }
 
-            if (parentNode.IsKind(SyntaxKind.SimpleMemberAccessExpression))
+            if (parentNode.IsKind(SyntaxKind.SimpleMemberAccessExpression, out MemberAccessExpressionSyntax memberAccess))
             {
-                var memberAccess = (MemberAccessExpressionSyntax)parentNode;
                 if (memberAccess.Expression == expression)
                 {
                     var memberSymbol = semanticModel.GetSymbolInfo(memberAccess).Symbol;
@@ -68,7 +71,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
                 !semanticModel.GetConversion(expression).IsUserDefined)
             {
                 var parentExpression = (ExpressionSyntax)parentNode;
-                return GetOuterCastType(parentExpression, semanticModel, out parentIsOrAsExpression) ?? semanticModel.GetTypeInfo(parentExpression).ConvertedType;
+                return GetOuterCastType(parentExpression, semanticModel, out parentIsIsOrAsExpression) ?? semanticModel.GetTypeInfo(parentExpression).ConvertedType;
             }
 
             return null;
@@ -197,10 +200,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
         {
             if (parameter?.IsParams == true)
             {
-                // if the method is defined with errors: void M(params int wrongDefined), paramter.IsParams == true but paramter.Type is not an array.
+                // if the method is defined with errors: void M(params int wrongDefined), parameter.IsParams == true but parameter.Type is not an array.
                 // In such cases is better to be conservative and opt out.
-                var parameterType = parameter.Type as IArrayTypeSymbol;
-                if (parameterType == null)
+                if (!(parameter.Type is IArrayTypeSymbol parameterType))
                 {
                     return true;
                 }
@@ -234,12 +236,34 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
             return false;
         }
 
-        private static bool EnumCastDefinitelyCantBeRemoved(CastExpressionSyntax cast, ITypeSymbol expressionType)
+        private static bool EnumCastDefinitelyCantBeRemoved(CastExpressionSyntax cast, ITypeSymbol expressionType, ITypeSymbol castType)
         {
-            if (expressionType != null
-                && expressionType.IsEnumType()
-                && cast.WalkUpParentheses().IsParentKind(SyntaxKind.UnaryMinusExpression, SyntaxKind.UnaryPlusExpression))
+            if (expressionType is null || !expressionType.IsEnumType())
             {
+                return false;
+            }
+
+            var outerExpression = cast.WalkUpParentheses();
+            if (outerExpression.IsParentKind(SyntaxKind.UnaryMinusExpression, SyntaxKind.UnaryPlusExpression))
+            {
+                // -(NumericType)value
+                // +(NumericType)value
+                return true;
+            }
+
+            if (castType.IsNumericType() && !outerExpression.IsParentKind(SyntaxKind.CastExpression))
+            {
+                if (outerExpression.Parent is BinaryExpressionSyntax
+                    || outerExpression.Parent is PrefixUnaryExpressionSyntax)
+                {
+                    // Let the parent code handle this, since it could be something like this:
+                    //
+                    //   (int)enumValue > 0
+                    //   ~(int)enumValue
+                    return false;
+                }
+
+                // Explicit enum cast to numeric type, but not part of a chained cast or binary expression
                 return true;
             }
 
@@ -250,25 +274,22 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
         {
             return conversion1.IsUserDefined
                 && conversion2.IsUserDefined
-                && conversion1.MethodSymbol == conversion2.MethodSymbol;
+                && Equals(conversion1.MethodSymbol, conversion2.MethodSymbol);
         }
 
         private static bool IsInDelegateCreationExpression(ExpressionSyntax expression, SemanticModel semanticModel)
         {
-            var argument = expression.WalkUpParentheses().Parent as ArgumentSyntax;
-            if (argument == null)
+            if (!(expression.WalkUpParentheses().Parent is ArgumentSyntax argument))
             {
                 return false;
             }
 
-            var argumentList = argument.Parent as ArgumentListSyntax;
-            if (argumentList == null)
+            if (!(argument.Parent is ArgumentListSyntax argumentList))
             {
                 return false;
             }
 
-            var objectCreation = argumentList.Parent as ObjectCreationExpressionSyntax;
-            if (objectCreation == null)
+            if (!(argumentList.Parent is ObjectCreationExpressionSyntax objectCreation))
             {
                 return false;
             }
@@ -345,7 +366,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
             var expressionTypeInfo = semanticModel.GetTypeInfo(cast.Expression, cancellationToken);
             var expressionType = expressionTypeInfo.Type;
 
-            if (EnumCastDefinitelyCantBeRemoved(cast, expressionType))
+            if (EnumCastDefinitelyCantBeRemoved(cast, expressionType, castType))
             {
                 return false;
             }
@@ -450,6 +471,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
                 var castToOuterType = semanticModel.ClassifyConversion(cast.SpanStart, cast, outerType);
                 var expressionToOuterType = GetSpeculatedExpressionToOuterTypeConversion(speculationAnalyzer.ReplacedExpression, speculationAnalyzer, cancellationToken);
 
+                // if the conversion to the outer type doesn't exist, then we shouldn't offer, except for anonymous functions which can't be reasoned about the same way (see below)
+                if (!expressionToOuterType.Exists && !expressionToOuterType.IsAnonymousFunction)
+                {
+                    return false;
+                }
+
                 // CONSIDER: Anonymous function conversions cannot be compared from different semantic models as lambda symbol comparison requires syntax tree equality. Should this be a compiler bug?
                 // For now, just revert back to computing expressionToOuterType using the original semantic model.
                 if (expressionToOuterType.IsAnonymousFunction)
@@ -495,7 +522,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
                     expressionToCastType.IsImplicit &&
                     (expressionToCastType.IsNumeric || expressionToCastType.IsConstantExpression))
                 {
-                    return true;
+                    // Some implicit numeric conversions can cause loss of precision and must not be removed.
+                    return !IsRequiredImplicitNumericConversion(expressionType, castType);
                 }
 
                 if (!castToOuterType.IsBoxing &&
@@ -619,6 +647,29 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
                 default:
                     return false;
             }
+        }
+
+        public static ExpressionSyntax Uncast(this CastExpressionSyntax node)
+        {
+            var leadingTrivia = node.OpenParenToken.LeadingTrivia
+                .Concat(node.OpenParenToken.TrailingTrivia)
+                .Concat(node.Type.GetLeadingTrivia())
+                .Concat(node.Type.GetTrailingTrivia())
+                .Concat(node.CloseParenToken.LeadingTrivia)
+                .Concat(node.CloseParenToken.TrailingTrivia)
+                .Concat(node.Expression.GetLeadingTrivia())
+                .Where(t => !t.IsElastic());
+
+            var trailingTrivia = node.GetTrailingTrivia().Where(t => !t.IsElastic());
+
+            var resultNode = node.Expression
+                .WithLeadingTrivia(leadingTrivia)
+                .WithTrailingTrivia(trailingTrivia)
+                .WithAdditionalAnnotations(Simplifier.Annotation);
+
+            resultNode = SimplificationHelpers.CopyAnnotations(from: node, to: resultNode);
+
+            return resultNode;
         }
     }
 }

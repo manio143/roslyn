@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Immutable;
@@ -9,6 +11,7 @@ using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Roslyn.Utilities;
 
 using static System.Linq.ImmutableArrayExtensions;
+using static Microsoft.CodeAnalysis.CSharp.Binder;
 
 namespace Microsoft.CodeAnalysis.CSharp.CodeGen
 {
@@ -74,7 +77,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 EmitExpressionCore(expression, used);
                 Debug.Assert(_recursionDepth == 1);
             }
-            catch (Exception ex) when (StackGuard.IsInsufficientExecutionStackException(ex))
+            catch (InsufficientExecutionStackException)
             {
                 _diagnostics.Add(ErrorCode.ERR_InsufficientStack,
                                  BoundTreeVisitor.CancelledByStackGuardException.GetTooLongOrComplexExpressionErrorLocation(expression));
@@ -108,6 +111,10 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
 
                 case BoundKind.ConvertedStackAllocExpression:
                     EmitConvertedStackAllocExpression((BoundConvertedStackAllocExpression)expression, used);
+                    break;
+
+                case BoundKind.ReadOnlySpanFromArray:
+                    EmitReadOnlySpanFromArrayExpression((BoundReadOnlySpanFromArray)expression, used);
                     break;
 
                 case BoundKind.Conversion:
@@ -509,7 +516,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             if (!nullCheckOnCopy)
             {
                 Debug.Assert(receiverTemp == null);
-                // receiver may be used as target of a struct call (if T happens to be a sruct)
+                // receiver may be used as target of a struct call (if T happens to be a struct)
                 receiverTemp = EmitReceiverRef(receiver, AddressKind.Constrained);
                 Debug.Assert(receiverTemp == null || receiver.IsDefaultValue());
             }
@@ -609,7 +616,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 default:
                     // NOTE: passing "ReadOnlyStrict" here. 
                     //       we should not get an address of a copy if at all possible
-                    var unexpectedTemp = EmitAddress(argument, refKind == RefKindExtensions.StrictIn? AddressKind.ReadOnlyStrict: AddressKind.Writeable);
+                    var unexpectedTemp = EmitAddress(argument, refKind == RefKindExtensions.StrictIn ? AddressKind.ReadOnlyStrict : AddressKind.Writeable);
                     if (unexpectedTemp != null)
                     {
                         // interestingly enough "ref dynamic" sometimes is passed via a clone
@@ -827,34 +834,43 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
 
             for (int i = 0; i < arguments.Length; i++)
             {
-                RefKind argRefKind;
+                RefKind argRefKind = GetArgumentRefKind(arguments, parameters, argRefKindsOpt, i);
+                EmitArgument(arguments[i], argRefKind);
+            }
+        }
 
-                if (i < parameters.Length)
+        /// <summary>
+        /// Computes the desired refkind of the argument.
+        /// Considers all the cases - where ref kinds are explicit, omitted, vararg cases.
+        /// </summary>
+        internal static RefKind GetArgumentRefKind(ImmutableArray<BoundExpression> arguments, ImmutableArray<ParameterSymbol> parameters, ImmutableArray<RefKind> argRefKindsOpt, int i)
+        {
+            RefKind argRefKind;
+            if (i < parameters.Length)
+            {
+                if (!argRefKindsOpt.IsDefault && i < argRefKindsOpt.Length)
                 {
-                    if (!argRefKindsOpt.IsDefault && i < argRefKindsOpt.Length)
-                    {
-                        // if we have an explicit refKind for the given argument, use that
-                        argRefKind = argRefKindsOpt[i];
+                    // if we have an explicit refKind for the given argument, use that
+                    argRefKind = argRefKindsOpt[i];
 
-                        Debug.Assert(argRefKind == parameters[i].RefKind ||
-                                argRefKind == RefKindExtensions.StrictIn && parameters[i].RefKind == RefKind.In,
-                                "in Emit the argument RefKind must be compatible with the corresponding parameter");
-                    }
-                    else
-                    {
-                        // otherwise fallback to the refKind of the parameter
-                        argRefKind = parameters[i].RefKind;
-                    }
+                    Debug.Assert(argRefKind == parameters[i].RefKind ||
+                            argRefKind == RefKindExtensions.StrictIn && parameters[i].RefKind == RefKind.In,
+                            "in Emit the argument RefKind must be compatible with the corresponding parameter");
                 }
                 else
                 {
-                    // vararg case
-                    Debug.Assert(arguments[i].Kind == BoundKind.ArgListOperator);
-                    argRefKind = RefKind.None;
+                    // otherwise fallback to the refKind of the parameter
+                    argRefKind = parameters[i].RefKind;
                 }
-
-                EmitArgument(arguments[i], argRefKind);
             }
+            else
+            {
+                // vararg case
+                Debug.Assert(arguments[i].Kind == BoundKind.ArgListOperator);
+                argRefKind = RefKind.None;
+            }
+
+            return argRefKind;
         }
 
         private void EmitArrayElementLoad(BoundArrayAccess arrayAccess, bool used)
@@ -992,7 +1008,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             else
             {
                 var receiver = fieldAccess.ReceiverOpt;
-                var fieldType = field.Type;
+                TypeSymbol fieldType = field.Type;
                 if (fieldType.IsValueType && (object)fieldType == (object)receiver.Type)
                 {
                     //Handle emitting a field of a self-containing struct (only possible in mscorlib)
@@ -1574,7 +1590,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             if (method.IsDefaultValueTypeConstructor())
             {
                 Debug.Assert(method.IsImplicitlyDeclared);
-                Debug.Assert(method.ContainingType == receiver.Type);
+                Debug.Assert(TypeSymbol.Equals(method.ContainingType, receiver.Type, TypeCompareKind.ConsiderEverything2));
                 Debug.Assert(receiver.Kind == BoundKind.ThisReference);
 
                 tempOpt = EmitReceiverRef(receiver, AddressKind.Writeable);
@@ -1608,7 +1624,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
 
             CallKind callKind;
 
-            if (method.IsStatic)
+            if (!method.RequiresInstanceReceiver)
             {
                 callKind = CallKind.Call;
             }
@@ -1649,7 +1665,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                             //       otherwise we should not use direct 'call' and must use constrained call;
 
                             // calling a method defined in a value type
-                            Debug.Assert(receiverType == methodContainingType);
+                            Debug.Assert(TypeSymbol.Equals(receiverType, methodContainingType, TypeCompareKind.ObliviousNullableModifierMatchesAny));
                             tempOpt = EmitReceiverRef(receiver, receiverAddresskind);
                             callKind = CallKind.Call;
                         }
@@ -1821,7 +1837,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
         {
             Debug.Assert(methodContainingType.IsVerifierValue(), "only struct calls can be readonly");
 
-            if (methodContainingType.IsReadOnly && method.MethodKind != MethodKind.Constructor)
+            if (method.IsEffectivelyReadOnly && method.MethodKind != MethodKind.Constructor)
             {
                 return true;
             }
@@ -1877,7 +1893,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 stack += 1;
             }
 
-            if (!call.Method.IsStatic)
+            if (call.Method.RequiresInstanceReceiver)
             {
                 // The call pops the receiver off the stack.
                 stack -= 1;
@@ -2034,6 +2050,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             // we can ignore that if the actual result is unused
             if (used)
             {
+                _sawStackalloc = true;
                 _builder.EmitOpCode(ILOpCode.Localloc);
             }
 
@@ -2113,7 +2130,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 return true;
             }
 
-            if (originalDef.ContainingType.Name == TupleTypeSymbol.TupleTypeName &&
+            if (originalDef.ContainingType.Name == NamedTypeSymbol.ValueTupleTypeName &&
                     (originalDef == compilation.GetWellKnownTypeMember(WellKnownMember.System_ValueTuple_T2__ctor) ||
                     originalDef == compilation.GetWellKnownTypeMember(WellKnownMember.System_ValueTuple_T3__ctor) ||
                     originalDef == compilation.GetWellKnownTypeMember(WellKnownMember.System_ValueTuple_T4__ctor) ||
@@ -2233,14 +2250,21 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 return true;
             }
 
-            if (right.Kind == BoundKind.ObjectCreationExpression)
+            if (right is BoundObjectCreationExpression objCreation)
             {
+                // If we are creating a Span<T> from a stackalloc, which is a particular pattern of code
+                // produced by lowering, we must use the constructor in its standard form because the stack
+                // is required to contain nothing more than stackalloc's argument.
+                if (objCreation.Arguments.Length > 0 && objCreation.Arguments[0].Kind == BoundKind.ConvertedStackAllocExpression)
+                {
+                    return false;
+                }
+
                 // It is desirable to do in-place ctor call if possible.
                 // we could do newobj/stloc, but in-place call 
                 // produces the same or better code in current JITs 
                 if (PartialCtorResultCannotEscape(left))
                 {
-                    var objCreation = (BoundObjectCreationExpression)right;
                     var ctor = objCreation.Constructor;
 
                     // ctor can possibly see its own assignments indirectly if there are ref parameters or __arglist
@@ -3194,7 +3218,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             }
 
             EmitSymbolToken(getMethod, node.Syntax, null);
-            if (node.Type != getMethod.ReturnType)
+            if (!TypeSymbol.Equals(node.Type, getMethod.ReturnType, TypeCompareKind.ConsiderEverything2))
             {
                 _builder.EmitOpCode(ILOpCode.Castclass);
                 EmitSymbolToken(node.Type, node.Syntax);
@@ -3221,7 +3245,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             }
 
             EmitSymbolToken(getField, node.Syntax, null);
-            if (node.Type != getField.ReturnType)
+            if (!TypeSymbol.Equals(node.Type, getField.ReturnType, TypeCompareKind.ConsiderEverything2))
             {
                 _builder.EmitOpCode(ILOpCode.Castclass);
                 EmitSymbolToken(node.Type, node.Syntax);
@@ -3278,7 +3302,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                     EmitStaticCast(expr.Type, expr.Syntax);
                     mergeTypeOfAlternative = expr.Type;
                 }
-                else if (expr.Type.IsInterfaceType() && expr.Type != mergeTypeOfAlternative)
+                else if (expr.Type.IsInterfaceType() && !TypeSymbol.Equals(expr.Type, mergeTypeOfAlternative, TypeCompareKind.ConsiderEverything2))
                 {
                     EmitStaticCast(expr.Type, expr.Syntax);
                 }
@@ -3302,7 +3326,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                     EmitStaticCast(expr.Type, expr.Syntax);
                     mergeTypeOfConsequence = expr.Type;
                 }
-                else if (expr.Type.IsInterfaceType() && expr.Type != mergeTypeOfConsequence)
+                else if (expr.Type.IsInterfaceType() && !TypeSymbol.Equals(expr.Type, mergeTypeOfConsequence, TypeCompareKind.ConsiderEverything2))
                 {
                     EmitStaticCast(expr.Type, expr.Syntax);
                 }
@@ -3325,7 +3349,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
         /// </remarks>
         private void EmitNullCoalescingOperator(BoundNullCoalescingOperator expr, bool used)
         {
-            Debug.Assert(expr.LeftConversion.IsIdentity, "coalesce with nontrivial left conversions are lowered into ternary.");
+            Debug.Assert(expr.LeftConversion.IsIdentity, "coalesce with nontrivial left conversions are lowered into conditional.");
             Debug.Assert(expr.Type.IsReferenceType);
 
             EmitExpression(expr.LeftOperand, used: true);
@@ -3339,7 +3363,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                     EmitStaticCast(expr.Type, expr.Syntax);
                     mergeTypeOfLeftValue = expr.Type;
                 }
-                else if (expr.Type.IsInterfaceType() && expr.Type != mergeTypeOfLeftValue)
+                else if (expr.Type.IsInterfaceType() && !TypeSymbol.Equals(expr.Type, mergeTypeOfLeftValue, TypeCompareKind.ConsiderEverything2))
                 {
                     EmitStaticCast(expr.Type, expr.Syntax);
                 }
@@ -3375,7 +3399,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
         }
 
         // Implicit casts are not emitted. As a result verifier may operate on a different 
-        // types from the types of operands when performing stack merges in coalesce/ternary.
+        // types from the types of operands when performing stack merges in coalesce/conditional.
         // Such differences are in general irrelevant since merging rules work the same way
         // for base and derived types.
         //
@@ -3406,11 +3430,12 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 case BoundKind.Conversion:
                     var conversion = (BoundConversion)expr;
                     var conversionKind = conversion.ConversionKind;
-                    Debug.Assert(conversionKind != ConversionKind.DefaultOrNullLiteral);
+                    Debug.Assert(conversionKind != ConversionKind.NullLiteral && conversionKind != ConversionKind.DefaultLiteral);
 
                     if (conversionKind.IsImplicitConversion() &&
                         conversionKind != ConversionKind.MethodGroup &&
-                        conversionKind != ConversionKind.DefaultOrNullLiteral)
+                        conversionKind != ConversionKind.NullLiteral &&
+                        conversionKind != ConversionKind.DefaultLiteral)
                     {
                         return StackMergeType(conversion.Operand);
                     }
@@ -3448,7 +3473,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
         // the same page with what type should be tracked.
         private static bool IsVarianceCast(TypeSymbol to, TypeSymbol from)
         {
-            if (to == from)
+            if (TypeSymbol.Equals(to, from, TypeCompareKind.ConsiderEverything2))
             {
                 return false;
             }
@@ -3466,8 +3491,8 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 return IsVarianceCast(((ArrayTypeSymbol)to).ElementType, ((ArrayTypeSymbol)from).ElementType);
             }
 
-            return (to.IsDelegateType() && to != from) ||
-                   (to.IsInterfaceType() && from.IsInterfaceType() && !from.InterfacesAndTheirBaseInterfacesNoUseSiteDiagnostics.Contains((NamedTypeSymbol)to));
+            return (to.IsDelegateType() && !TypeSymbol.Equals(to, from, TypeCompareKind.ConsiderEverything2)) ||
+                   (to.IsInterfaceType() && from.IsInterfaceType() && !from.InterfacesAndTheirBaseInterfacesNoUseSiteDiagnostics.ContainsKey((NamedTypeSymbol)to));
         }
 
         private void EmitStaticCast(TypeSymbol to, SyntaxNode syntax)
@@ -3492,6 +3517,8 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
 
         private void EmitBox(TypeSymbol type, SyntaxNode syntaxNode)
         {
+            Debug.Assert(!type.IsRefLikeType);
+
             _builder.EmitOpCode(ILOpCode.Box);
             EmitSymbolToken(type, syntaxNode);
         }

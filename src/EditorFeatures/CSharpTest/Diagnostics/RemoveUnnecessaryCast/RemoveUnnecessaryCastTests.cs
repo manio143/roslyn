@@ -1,7 +1,11 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CodeFixes;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.CodeFixes.RemoveUnnecessaryCast;
 using Microsoft.CodeAnalysis.CSharp.Diagnostics.RemoveUnnecessaryCast;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -58,7 +62,7 @@ class Program
     {
         int x = 2;
         int i = 1;
-        Goo((x < i), x > (2 + 3));
+        Goo(x < (i), x > (2 + 3));
     }
  
     static void Goo(bool a, bool b) { }
@@ -2009,6 +2013,90 @@ class Program
 }");
         }
 
+        [WorkItem(26640, "https://github.com/dotnet/roslyn/issues/26640")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontRemoveCastToByteFromIntInConditionalExpression()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"class C
+{
+    object M1(bool b)
+    {
+        return [|b ? (byte)1 : (byte)0|];
+    }
+}");
+        }
+
+        [WorkItem(26640, "https://github.com/dotnet/roslyn/issues/26640")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task RemoveCastToDoubleFromIntWithTwoInConditionalExpression()
+        {
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    object M1(bool b)
+    {
+        return [|b ? (double)1 : (double)0|];
+    }
+}",
+@"class C
+{
+    object M1(bool b)
+    {
+        return b ? 1 : (double)0;
+    }
+}");
+        }
+
+        [WorkItem(26640, "https://github.com/dotnet/roslyn/issues/26640")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontRemoveCastToDoubleFromIntInConditionalExpression()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"class C
+{
+    object M1(bool b)
+    {
+        return [|b ? 1 : (double)0|];
+    }
+}");
+        }
+
+        [WorkItem(26640, "https://github.com/dotnet/roslyn/issues/26640")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontRemoveCastToUIntFromCharInConditionalExpression()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"class C
+{
+    object M1(bool b)
+    {
+        return [|b ? '1' : (uint)'0'|];
+    }
+}");
+        }
+
+        [WorkItem(26640, "https://github.com/dotnet/roslyn/issues/26640")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task RemoveUnnecessaryNumericCastToSameTypeInConditionalExpression()
+        {
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    object M1(bool b)
+    {
+        return [|b ? (int)1 : 0|];
+    }
+}",
+@"class C
+{
+    object M1(bool b)
+    {
+        return b ? 1 : 0;
+    }
+}");
+        }
+
         [WorkItem(545894, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545894")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
         public async Task DontRemoveNecessaryCastInAttribute()
@@ -2021,6 +2109,22 @@ class A : Attribute
 {
     public A(object x)
     {
+    }
+}");
+        }
+
+        [WorkItem(39042, "https://github.com/dotnet/roslyn/issues/39042")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontRemoveNecessaryCastForImplicitNumericCastsThatLoseInformation()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"using System;
+
+class A
+{
+    public A(long x)
+    {
+        long y = (long)[|(double)x|];
     }
 }");
         }
@@ -3549,7 +3653,7 @@ class C
 {
     void Goo(Task<Action> x)
     {
-        x.Result();
+        (x.Result)();
     }
 }
 ");
@@ -3988,6 +4092,80 @@ static class Program
 }");
         }
 
+        [WorkItem(29264, "https://github.com/dotnet/roslyn/issues/29264")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontRemoveCastOnDictionaryIndexer()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+using System;
+using System.Reflection;
+using System.Collections.Generic;
+
+static class Program
+{
+    enum TestEnum
+    {
+        Test,
+    }
+
+    static void Main()
+    {
+        Dictionary<int, string> Icons = new Dictionary<int, string>
+        {
+            [[|(int)|] TestEnum.Test] = null,
+        };
+    }
+}");
+        }
+
+        [WorkItem(29264, "https://github.com/dotnet/roslyn/issues/29264")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task RemoveCastOnDictionaryIndexer()
+        {
+            await TestInRegularAndScriptAsync(
+                @"
+using System;
+using System.Reflection;
+using System.Collections.Generic;
+
+static class Program
+{
+    enum TestEnum
+    {
+        Test,
+    }
+
+    static void Main()
+    {
+        Dictionary<int, string> Icons = new Dictionary<int, string>
+        {
+            [[|(int)|] 0] = null,
+        };
+    }
+}",
+                @"
+using System;
+using System.Reflection;
+using System.Collections.Generic;
+
+static class Program
+{
+    enum TestEnum
+    {
+        Test,
+    }
+
+    static void Main()
+    {
+        Dictionary<int, string> Icons = new Dictionary<int, string>
+        {
+            [0] = null,
+        };
+    }
+}");
+        }
+
         [WorkItem(20630, "https://github.com/dotnet/roslyn/issues/20630")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
         public async Task DontRemoveCastOnCallToAttributeWithParamsArgsAndProperty()
@@ -4225,6 +4403,374 @@ enum Sign
             Sign invertedSign = (Sign) ( ~mySign);
         }
     }");
+        }
+
+        [WorkItem(25456, "https://github.com/dotnet/roslyn/issues/25456#issuecomment-373549735")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInSwitchCase()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case [|(bool)default|]:
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInSwitchCase_CastInsideParentheses()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case ([|(bool)default|]):
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInSwitchCase_DefaultInsideParentheses()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case [|(bool)(default)|]:
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInSwitchCase_RemoveDoubleCast()
+        {
+            await TestInRegularAndScript1Async(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case (bool)[|(bool)default|]:
+                break;
+        }
+    }
+}",
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case (bool)default:
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternSwitchCase()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case [|(bool)default|] when true:
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternSwitchCase_CastInsideParentheses()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case ([|(bool)default|]) when true:
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternSwitchCase_DefaultInsideParentheses()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case [|(bool)(default)|] when true:
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternSwitchCase_RemoveDoubleCast()
+        {
+            await TestInRegularAndScript1Async(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case (bool)[|(bool)default|] when true:
+                break;
+        }
+    }
+}",
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case (bool)default when true:
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternSwitchCase_RemoveInsideWhenClause()
+        {
+            await TestInRegularAndScript1Async(
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case (bool)default when [|(bool)default|]:
+                break;
+        }
+    }
+}",
+@"
+class C
+{
+    void M()
+    {
+        switch (true)
+        {
+            case (bool)default when default:
+                break;
+        }
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternIs()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        if (true is [|(bool)default|]);
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternIs_CastInsideParentheses()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        if (true is ([|(bool)default|]));
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternIs_DefaultInsideParentheses()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class C
+{
+    void M()
+    {
+        if (true is [|(bool)(default)|]);
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontIntroduceDefaultLiteralInPatternIs_RemoveDoubleCast()
+        {
+            await TestInRegularAndScript1Async(
+@"
+class C
+{
+    void M()
+    {
+        if (true is (bool)[|(bool)default|]);
+    }
+}",
+@"
+class C
+{
+    void M()
+    {
+        if (true is (bool)default) ;
+    }
+}", parameters: new TestParameters(new CSharpParseOptions(LanguageVersion.CSharp7_1)));
+        }
+
+        [WorkItem(27239, "https://github.com/dotnet/roslyn/issues/27239")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontOfferToRemoveCastWhereNoConversionExists()
+        {
+            await TestMissingInRegularAndScriptAsync(
+                @"
+using System;
+
+class C
+{
+    void M()
+    {
+        object o = null;
+        TypedReference r2 = [|(TypedReference)o|];
+    }
+}");
+        }
+
+        [WorkItem(28412, "https://github.com/dotnet/roslyn/issues/28412")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontOfferToRemoveCastWhenAccessingHiddenProperty()
+        {
+            await TestMissingInRegularAndScriptAsync(@"
+using System.Collections.Generic;
+class Fruit
+{
+    public IDictionary<string, object> Properties { get; set; }
+}
+class Apple : Fruit
+{
+    public new IDictionary<string, object> Properties { get; }
+}
+class Tester
+{
+    public void Test()
+    {
+        var a = new Apple();
+        ([|(Fruit)a|]).Properties[""Color""] = ""Red"";
+    }
+}");
+        }
+
+        [WorkItem(31963, "https://github.com/dotnet/roslyn/issues/31963")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontOfferToRemoveCastInConstructorWhenItNeeded()
+        {
+            await TestMissingInRegularAndScriptAsync(@"
+class IntegerWrapper
+{
+    public IntegerWrapper(int value)
+    {
+    }
+}
+enum Goo
+{
+    First,
+    Second
+}
+class Tester
+{
+    public void Test()
+    {
+        var a = new IntegerWrapper([|(int)Goo.First|]);
+    }
+}");
+        }
+
+        [WorkItem(31963, "https://github.com/dotnet/roslyn/issues/31963")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontOfferToRemoveCastInBaseConstructorInitializerWhenItNeeded()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class B
+{
+    B(int a)
+    {
+    }
+}
+class C : B
+{
+    C(double a) : base([|(int)a|])
+    {
+    }
+}");
+        }
+
+        [WorkItem(31963, "https://github.com/dotnet/roslyn/issues/31963")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsRemoveUnnecessaryCast)]
+        public async Task DontOfferToRemoveCastInConstructorInitializerWhenItNeeded()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"
+class B
+{
+    B(int a)
+    {
+    }
+
+    B(double a) : this([|(int)a|])
+    {
+    }
+}");
         }
     }
 }

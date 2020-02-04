@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -7,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Host;
+using Microsoft.CodeAnalysis.LanguageServices;
 using Microsoft.CodeAnalysis.Options;
 using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Simplification;
@@ -33,8 +36,10 @@ namespace Microsoft.CodeAnalysis.Editing
         internal abstract SyntaxTrivia CarriageReturnLineFeed { get; }
         internal abstract SyntaxTrivia ElasticCarriageReturnLineFeed { get; }
         internal abstract bool RequiresExplicitImplementationForInterfaceMembers { get; }
+        internal abstract ISyntaxFactsService SyntaxFacts { get; }
 
         internal abstract SyntaxTrivia EndOfLine(string text);
+        internal abstract SyntaxTrivia Whitespace(string text);
 
         /// <summary>
         /// Gets the <see cref="SyntaxGenerator"/> for the specified language.
@@ -175,7 +180,8 @@ namespace Microsoft.CodeAnalysis.Editing
 
             if (method.ExplicitInterfaceImplementations.Length > 0)
             {
-                decl = this.WithExplicitInterfaceImplementations(decl, method.ExplicitInterfaceImplementations);
+                decl = this.WithExplicitInterfaceImplementations(decl,
+                    ImmutableArray<ISymbol>.CastUp(method.ExplicitInterfaceImplementations));
             }
 
             return decl;
@@ -684,7 +690,7 @@ namespace Microsoft.CodeAnalysis.Editing
             return declaration;
         }
 
-        internal abstract SyntaxNode WithExplicitInterfaceImplementations(SyntaxNode declaration, ImmutableArray<IMethodSymbol> explicitInterfaceImplementations);
+        internal abstract SyntaxNode WithExplicitInterfaceImplementations(SyntaxNode declaration, ImmutableArray<ISymbol> explicitInterfaceImplementations);
 
         /// <summary>
         /// Converts a declaration (method, class, etc) into a declaration with type parameters.
@@ -788,6 +794,21 @@ namespace Microsoft.CodeAnalysis.Editing
         }
 
         /// <summary>
+        /// Creates an alias import declaration.
+        /// </summary>
+        /// <param name="aliasIdentifierName">The name of the alias.</param>
+        /// <param name="symbol">The namespace or type to be aliased.</param>
+        public SyntaxNode AliasImportDeclaration(string aliasIdentifierName, INamespaceOrTypeSymbol symbol)
+            => AliasImportDeclaration(aliasIdentifierName, NameExpression(symbol));
+
+        /// <summary>
+        /// Creates an alias import declaration.
+        /// </summary>
+        /// <param name="aliasIdentifierName">The name of the alias.</param>
+        /// <param name="name">The namespace or type to be aliased.</param>
+        public abstract SyntaxNode AliasImportDeclaration(string aliasIdentifierName, SyntaxNode name);
+
+        /// <summary>
         /// Creates an attribute.
         /// </summary>
         public abstract SyntaxNode Attribute(SyntaxNode name, IEnumerable<SyntaxNode> attributeArguments = null);
@@ -822,11 +843,6 @@ namespace Microsoft.CodeAnalysis.Editing
                 attributeArguments: args.Count > 0 ? args : null);
         }
 
-        private IEnumerable<SyntaxNode> GetSymbolAttributes(ISymbol symbol)
-        {
-            return symbol.GetAttributes().Select(a => Attribute(a));
-        }
-
         /// <summary>
         /// Creates an attribute argument.
         /// </summary>
@@ -846,11 +862,25 @@ namespace Microsoft.CodeAnalysis.Editing
         public SyntaxNode RemoveAllAttributes(SyntaxNode declaration)
             => this.RemoveNodes(declaration, this.GetAttributes(declaration).Concat(this.GetReturnAttributes(declaration)));
 
-        internal SyntaxNode RemoveAllComments(SyntaxNode declaration)
+        /// <summary>
+        /// Removes comments from leading and trailing trivia, as well
+        /// as potentially removing comments from opening and closing tokens.
+        /// </summary>
+        internal abstract SyntaxNode RemoveAllComments(SyntaxNode node);
+
+        internal SyntaxNode RemoveLeadingAndTrailingComments(SyntaxNode node)
         {
-            return declaration.WithLeadingTrivia(declaration.GetLeadingTrivia().Where(t => !IsRegularOrDocComment(t)))
-                              .WithTrailingTrivia(declaration.GetTrailingTrivia().Where(t => !IsRegularOrDocComment(t)));
+            return node.WithLeadingTrivia(RemoveCommentLines(node.GetLeadingTrivia()))
+                .WithTrailingTrivia(RemoveCommentLines(node.GetTrailingTrivia()));
         }
+
+        internal SyntaxToken RemoveLeadingAndTrailingComments(SyntaxToken token)
+        {
+            return token.WithLeadingTrivia(RemoveCommentLines(token.LeadingTrivia))
+                .WithTrailingTrivia(RemoveCommentLines(token.TrailingTrivia));
+        }
+
+        internal abstract SyntaxTriviaList RemoveCommentLines(SyntaxTriviaList syntaxTriviaList);
 
         internal abstract bool IsRegularOrDocComment(SyntaxTrivia trivia);
 
@@ -1065,6 +1095,8 @@ namespace Microsoft.CodeAnalysis.Editing
         /// </summary>
         public abstract IReadOnlyList<SyntaxNode> GetParameters(SyntaxNode declaration);
 
+        internal abstract SyntaxNode GetParameterListNode(SyntaxNode declaration);
+
         /// <summary>
         /// Inserts the parameters at the specified index into the declaration.
         /// </summary>
@@ -1197,6 +1229,9 @@ namespace Microsoft.CodeAnalysis.Editing
             }
         }
 
+        internal SyntaxNode ReplaceNode(SyntaxNode root, SyntaxNode node, IEnumerable<SyntaxNode> newDeclarations)
+            => root.ReplaceNode(node, newDeclarations);
+
         /// <summary>
         /// Inserts the new node before the specified declaration.
         /// </summary>
@@ -1246,6 +1281,8 @@ namespace Microsoft.CodeAnalysis.Editing
         #endregion
 
         #region Utility
+
+        internal abstract SeparatedSyntaxList<TElement> SeparatedList<TElement>(SyntaxNodeOrTokenList list) where TElement : SyntaxNode;
 
         internal static SyntaxTokenList Merge(SyntaxTokenList original, SyntaxTokenList newList)
         {
@@ -1382,6 +1419,12 @@ namespace Microsoft.CodeAnalysis.Editing
         public abstract SyntaxNode ReturnStatement(SyntaxNode expression = null);
 
         /// <summary>
+        /// Creates a statement that can be used to yield a value from an iterator method.
+        /// </summary>
+        /// <param name="expression">An expression that can be yielded.</param>
+        internal abstract SyntaxNode YieldReturnStatement(SyntaxNode expression);
+
+        /// <summary>
         /// Creates a statement that can be used to throw an exception.
         /// </summary>
         /// <param name="expression">An optional expression that can be thrown.</param>
@@ -1391,6 +1434,19 @@ namespace Microsoft.CodeAnalysis.Editing
         /// Creates an expression that can be used to throw an exception.
         /// </summary>
         public abstract SyntaxNode ThrowExpression(SyntaxNode expression);
+
+        /// <summary>
+        /// True if <see cref="ThrowExpression"/> can be used
+        /// </summary>
+        internal abstract bool SupportsThrowExpression();
+
+        /// <summary>
+        /// <see langword="true"/> if the language requires a <see cref="TypeExpression(ITypeSymbol)"/>
+        /// (including <see langword="var"/>) to be stated when making a 
+        /// <see cref="LocalDeclarationStatement(ITypeSymbol, string, SyntaxNode, bool)"/>.
+        /// <see langword="false"/> if the language allows the type node to be entirely elided.
+        /// </summary>
+        internal abstract bool RequiresLocalDeclarationType();
 
         /// <summary>
         /// Creates a statement that declares a single local variable.
@@ -1543,6 +1599,11 @@ namespace Microsoft.CodeAnalysis.Editing
         /// </summary>
         public abstract SyntaxNode WhileStatement(SyntaxNode condition, IEnumerable<SyntaxNode> statements);
 
+        /// <summary>
+        /// Creates a block of statements. Not supported in VB.
+        /// </summary>
+        internal abstract SyntaxNode ScopeBlock(IEnumerable<SyntaxNode> statements);
+
         #endregion
 
         #region Expressions
@@ -1553,6 +1614,8 @@ namespace Microsoft.CodeAnalysis.Editing
         internal abstract SyntaxNode InterpolatedStringText(SyntaxToken textToken);
         internal abstract SyntaxNode Interpolation(SyntaxNode syntaxNode);
         internal abstract SyntaxNode InterpolatedStringExpression(SyntaxToken startToken, IEnumerable<SyntaxNode> content, SyntaxToken endToken);
+        internal abstract SyntaxNode InterpolationAlignmentClause(SyntaxNode alignment);
+        internal abstract SyntaxNode InterpolationFormatClause(string format);
 
         /// <summary>
         /// An expression that represents the default value of a type.
@@ -1621,6 +1684,8 @@ namespace Microsoft.CodeAnalysis.Editing
         /// </summary>
         public abstract SyntaxNode GenericName(string identifier, IEnumerable<SyntaxNode> typeArguments);
 
+        internal abstract SyntaxNode GenericName(SyntaxToken identifier, IEnumerable<SyntaxNode> typeArguments);
+
         /// <summary>
         /// Creates an expression that denotes a generic identifier name.
         /// </summary>
@@ -1668,6 +1733,11 @@ namespace Microsoft.CodeAnalysis.Editing
         public abstract SyntaxNode QualifiedName(SyntaxNode left, SyntaxNode right);
 
         /// <summary>
+        /// Returns a new name node qualified with the 'global' alias ('Global' in VB).
+        /// </summary>
+        internal abstract SyntaxNode GlobalAliasedName(SyntaxNode name);
+
+        /// <summary>
         /// Creates a name expression from a dotted name string.
         /// </summary>
         public SyntaxNode DottedName(string dottedName)
@@ -1696,6 +1766,13 @@ namespace Microsoft.CodeAnalysis.Editing
         }
 
         private static readonly char[] s_dotSeparator = new char[] { '.' };
+
+        /// <summary>
+        /// Creates a name that denotes a type or namespace.
+        /// </summary>
+        /// <param name="namespaceOrTypeSymbol">The symbol to create a name for.</param>
+        /// <returns></returns>
+        public abstract SyntaxNode NameExpression(INamespaceOrTypeSymbol namespaceOrTypeSymbol);
 
         /// <summary>
         /// Creates an expression that denotes a type.
@@ -2177,6 +2254,11 @@ namespace Microsoft.CodeAnalysis.Editing
         public abstract SyntaxNode AwaitExpression(SyntaxNode expression);
 
         /// <summary>
+        /// Wraps with parens.
+        /// </summary>
+        internal abstract SyntaxNode AddParentheses(SyntaxNode expression);
+
+        /// <summary>
         /// Creates an nameof expression.
         /// </summary>
         public abstract SyntaxNode NameOfExpression(SyntaxNode expression);
@@ -2185,6 +2267,15 @@ namespace Microsoft.CodeAnalysis.Editing
         /// Creates an tuple expression.
         /// </summary>
         public abstract SyntaxNode TupleExpression(IEnumerable<SyntaxNode> arguments);
+
+        #endregion
+
+        #region Patterns
+
+        internal abstract bool SupportsPatterns(ParseOptions options);
+        internal abstract SyntaxNode IsPatternExpression(SyntaxNode expression, SyntaxNode pattern);
+        internal abstract SyntaxNode DeclarationPattern(INamedTypeSymbol type, string name);
+        internal abstract SyntaxNode ConstantPattern(SyntaxNode expression);
 
         #endregion
     }

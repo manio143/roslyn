@@ -1,7 +1,10 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Globalization
 Imports Microsoft.CodeAnalysis.Editing
+Imports Microsoft.CodeAnalysis.Shared.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports Roslyn.Test.Utilities
@@ -57,13 +60,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Editting
         Public Sub TestLiteralExpressions()
             VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(0), "0")
             VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(1), "1")
-            VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(-1), "-1")
+            VerifySyntax(Of UnaryExpressionSyntax)(Generator.LiteralExpression(-1), "-1")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Integer.MinValue), "Global.System.Int32.MinValue")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Integer.MaxValue), "Global.System.Int32.MaxValue")
 
             VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(0L), "0L")
             VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(1L), "1L")
-            VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(-1L), "-1L")
+            VerifySyntax(Of UnaryExpressionSyntax)(Generator.LiteralExpression(-1L), "-1L")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Long.MinValue), "Global.System.Int64.MinValue")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Long.MaxValue), "Global.System.Int64.MaxValue")
 
@@ -74,7 +77,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Editting
 
             VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(0.0F), "0F")
             VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(1.0F), "1F")
-            VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(-1.0F), "-1F")
+            VerifySyntax(Of UnaryExpressionSyntax)(Generator.LiteralExpression(-1.0F), "-1F")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Single.MinValue), "Global.System.Single.MinValue")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Single.MaxValue), "Global.System.Single.MaxValue")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Single.Epsilon), "Global.System.Single.Epsilon")
@@ -84,7 +87,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Editting
 
             VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(0.0), "0R")
             VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(1.0), "1R")
-            VerifySyntax(Of LiteralExpressionSyntax)(Generator.LiteralExpression(-1.0), "-1R")
+            VerifySyntax(Of UnaryExpressionSyntax)(Generator.LiteralExpression(-1.0), "-1R")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Double.MinValue), "Global.System.Double.MinValue")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Double.MaxValue), "Global.System.Double.MaxValue")
             VerifySyntax(Of MemberAccessExpressionSyntax)(Generator.LiteralExpression(Double.Epsilon), "Global.System.Double.Epsilon")
@@ -253,8 +256,8 @@ End Class
             VerifySyntax(Of TupleElementSyntax)(Generator.TupleElementExpression(intType), "System.Int32")
             VerifySyntax(Of TupleElementSyntax)(Generator.TupleElementExpression(intType, "y"), "y As System.Int32")
             VerifySyntax(Of TypeSyntax)(Generator.TupleTypeExpression(Generator.TupleElementExpression(Generator.IdentifierName("x")), Generator.TupleElementExpression(Generator.IdentifierName("y"))), "(x, y)")
-            VerifySyntax(Of TypeSyntax)(Generator.TupleTypeExpression(new ITypeSymbol() { intType, intType }), "(System.Int32, System.Int32)")
-            VerifySyntax(Of TypeSyntax)(Generator.TupleTypeExpression(new ITypeSymbol() { intType, intType }, New String() { "x", "y" }), "(x As System.Int32, y As System.Int32)")
+            VerifySyntax(Of TypeSyntax)(Generator.TupleTypeExpression(New ITypeSymbol() {intType, intType}), "(System.Int32, System.Int32)")
+            VerifySyntax(Of TypeSyntax)(Generator.TupleTypeExpression(New ITypeSymbol() {intType, intType}, New String() {"x", "y"}), "(x As System.Int32, y As System.Int32)")
         End Sub
 
         <Fact>
@@ -473,6 +476,12 @@ End Class
         Public Sub TestReturnStatements()
             VerifySyntax(Of ReturnStatementSyntax)(Generator.ReturnStatement(), "Return")
             VerifySyntax(Of ReturnStatementSyntax)(Generator.ReturnStatement(Generator.IdentifierName("x")), "Return x")
+        End Sub
+
+        <Fact>
+        Public Sub TestYieldReturnStatements()
+            VerifySyntax(Of YieldStatementSyntax)(Generator.YieldReturnStatement(Generator.LiteralExpression(1)), "Yield 1")
+            VerifySyntax(Of YieldStatementSyntax)(Generator.YieldReturnStatement(Generator.IdentifierName("x")), "Yield x")
         End Sub
 
         <Fact>
@@ -778,6 +787,39 @@ End Sub")
                 Generator.VoidReturningLambdaExpression({Generator.LambdaParameter("x", Generator.IdentifierName("y")), Generator.LambdaParameter("a", Generator.IdentifierName("b"))}, Generator.IdentifierName("z")),
                 "Sub(x As y, a As b) z")
         End Sub
+
+        <Fact, WorkItem(31720, "https://github.com/dotnet/roslyn/issues/31720")>
+        Sub TestGetAttributeOnMethodBodies()
+            Dim compilation = Compile("
+Imports System
+<AttributeUsage(System.AttributeTargets.All)>
+Public Class MyAttribute
+  Inherits Attribute
+End Class
+
+Public Class C
+    <MyAttribute>
+    Sub New()
+    End Sub
+
+    <MyAttribute>
+    Sub M1()
+    End Sub
+
+    <MyAttribute>
+    Function M1() As String
+        Return Nothing
+    End Sub
+End Class
+")
+
+            Dim syntaxTree = compilation.SyntaxTrees(0)
+            Dim declarations = syntaxTree.GetRoot().DescendantNodes().OfType(Of MethodBlockBaseSyntax)
+
+            For Each decl In declarations
+                Assert.Equal("<MyAttribute>", Generator.GetAttributes(decl).Single().ToString())
+            Next
+        End Sub
 #End Region
 
 #Region "Declarations"
@@ -844,7 +886,7 @@ End Function")
 
             VerifySyntax(Of MethodBlockSyntax)(
                 Generator.MethodDeclaration("m", accessibility:=Accessibility.Private, modifiers:=DeclarationModifiers.Partial),
-"Private Partial Sub m()
+"Partial Private Sub m()
 End Sub")
 
         End Sub
@@ -1381,7 +1423,7 @@ End Structure")
 
             VerifySyntax(Of StructureBlockSyntax)(
                 Generator.StructDeclaration("s", accessibility:=Accessibility.Public, modifiers:=DeclarationModifiers.Partial),
-"Public Partial Structure s
+"Partial Public Structure s
 End Structure")
 
             VerifySyntax(Of StructureBlockSyntax)(
@@ -3356,6 +3398,14 @@ End Class")
 
             VerifySyntax(Of ClassBlockSyntax)(
                 Generator.ReplaceNode(declC, declX, Generator.WithName(declX, "Q")),
+"' Comment
+Public Class C
+
+    Public Shared Q, Y, Z As Integer
+End Class")
+
+            VerifySyntax(Of ClassBlockSyntax)(
+                Generator.ReplaceNode(declC, declX.GetAncestorOrThis(Of ModifiedIdentifierSyntax), SyntaxFactory.ModifiedIdentifier("Q")),
 "' Comment
 Public Class C
 

@@ -1,11 +1,12 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editing;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CodeFixes
 {
@@ -35,7 +36,7 @@ namespace Microsoft.CodeAnalysis.CodeFixes
                 cancellationToken);
         }
 
-        protected async Task<Document> FixAllWithEditorAsync(
+        internal static async Task<Document> FixAllWithEditorAsync(
             Document document,
             Func<SyntaxEditor, Task> editAsync,
             CancellationToken cancellationToken)
@@ -49,16 +50,46 @@ namespace Microsoft.CodeAnalysis.CodeFixes
             return document.WithSyntaxRoot(newRoot);
         }
 
+        internal abstract CodeFixCategory CodeFixCategory { get; }
+
         protected abstract Task FixAllAsync(
             Document document, ImmutableArray<Diagnostic> diagnostics, SyntaxEditor editor, CancellationToken cancellationToken);
 
         /// <summary>
-        /// Whether or not this diagnostic should be included when performing a FixAll.  This is useful
-        /// for providers that create multiple diagnostics for the same issue (For example, one main 
-        /// diagnostic and multiple 'faded out code' diagnostics).  FixAll can be invoked from any of 
-        /// those, but we'll only want perform an edit for only one diagnostic for each of those sets
-        /// of diagnostics.
+        /// Whether or not this diagnostic should be included when performing a FixAll.  This is
+        /// useful for providers that create multiple diagnostics for the same issue (For example,
+        /// one main diagnostic and multiple 'faded out code' diagnostics).  FixAll can be invoked
+        /// from any of those, but we'll only want perform an edit for only one diagnostic for each
+        /// of those sets of diagnostics.
+        ///
+        /// This overload differs from <see cref="IncludeDiagnosticDuringFixAll(Diagnostic)"/> in
+        /// that it also passes along the <see cref="FixAllState"/> in case that would be useful
+        /// (for example if the <see cref="FixAllState.CodeActionEquivalenceKey"/> is used.  
+        ///
+        /// Only one of these two overloads needs to be overridden if you want to customize
+        /// behavior.
         /// </summary>
-        protected virtual bool IncludeDiagnosticDuringFixAll(Diagnostic diagnostic) => true;
+        protected virtual bool IncludeDiagnosticDuringFixAll(FixAllState fixAllState, Diagnostic diagnostic, CancellationToken cancellationToken)
+            => IncludeDiagnosticDuringFixAll(diagnostic);
+
+        /// <summary>
+        /// Whether or not this diagnostic should be included when performing a FixAll.  This is
+        /// useful for providers that create multiple diagnostics for the same issue (For example,
+        /// one main diagnostic and multiple 'faded out code' diagnostics).  FixAll can be invoked
+        /// from any of those, but we'll only want perform an edit for only one diagnostic for each
+        /// of those sets of diagnostics.
+        ///
+        /// By default, all diagnostics will be included in fix-all unless they are filtered out
+        /// here. If only the diagnostic needs to be queried to make this determination, only this
+        /// overload needs to be overridden.  However, if information from <see cref="FixAllState"/>
+        /// is needed (for example <see cref="FixAllState.CodeActionEquivalenceKey"/>), then <see
+        /// cref="IncludeDiagnosticDuringFixAll(FixAllState, Diagnostic, CancellationToken)"/>
+        /// should be overridden instead.
+        ///
+        /// Only one of these two overloads needs to be overridden if you want to customize
+        /// behavior.
+        /// </summary>
+        protected virtual bool IncludeDiagnosticDuringFixAll(Diagnostic diagnostic)
+            => true;
     }
 }

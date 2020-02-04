@@ -1,29 +1,32 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Threading;
 using Microsoft.CodeAnalysis.CodeStyle;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Shared.Extensions;
 
 namespace Microsoft.CodeAnalysis.UseAutoProperty
 {
-    internal abstract class AbstractUseAutoPropertyAnalyzer<TPropertyDeclaration, TFieldDeclaration, TVariableDeclarator, TExpression> :
-        AbstractCodeStyleDiagnosticAnalyzer
+    internal abstract class AbstractUseAutoPropertyAnalyzer<
+        TPropertyDeclaration, TFieldDeclaration, TVariableDeclarator, TExpression> : AbstractBuiltInCodeStyleDiagnosticAnalyzer
         where TPropertyDeclaration : SyntaxNode
         where TFieldDeclaration : SyntaxNode
         where TVariableDeclarator : SyntaxNode
         where TExpression : SyntaxNode
     {
         private static readonly LocalizableString s_title =
-            new LocalizableResourceString(nameof(FeaturesResources.Use_auto_property), FeaturesResources.ResourceManager, typeof(FeaturesResources));
+            new LocalizableResourceString(nameof(FeaturesResources.Use_auto_property),
+                FeaturesResources.ResourceManager, typeof(FeaturesResources));
 
         protected AbstractUseAutoPropertyAnalyzer()
-            : base(IDEDiagnosticIds.UseAutoPropertyDiagnosticId, s_title, s_title)
+            : base(IDEDiagnosticIds.UseAutoPropertyDiagnosticId, CodeStyleOptions.PreferAutoProperties, s_title, s_title)
         {
         }
 
-        public override bool OpenFileOnly(Workspace workspace) => false;
         public override DiagnosticAnalyzerCategory GetAnalyzerCategory() => DiagnosticAnalyzerCategory.SemanticSpanAnalysis;
 
         protected abstract void AnalyzeCompilationUnit(SemanticModelAnalysisContext context, SyntaxNode root, List<AnalysisResult> analysisResults);
@@ -73,13 +76,13 @@ namespace Microsoft.CodeAnalysis.UseAutoProperty
             Process(analysisResults, ineligibleFields, context);
         }
 
-        protected void AnalyzeProperty(SemanticModelAnalysisContext context, TPropertyDeclaration propertyDeclaration, List<AnalysisResult> analysisResults)
+        protected void AnalyzeProperty(
+            SemanticModelAnalysisContext context, TPropertyDeclaration propertyDeclaration, List<AnalysisResult> analysisResults)
         {
             var cancellationToken = context.CancellationToken;
             var semanticModel = context.SemanticModel;
 
-            var property = semanticModel.GetDeclaredSymbol(propertyDeclaration, cancellationToken) as IPropertySymbol;
-            if (property == null)
+            if (!(semanticModel.GetDeclaredSymbol(propertyDeclaration, cancellationToken) is IPropertySymbol property))
             {
                 return;
             }
@@ -161,8 +164,14 @@ namespace Microsoft.CodeAnalysis.UseAutoProperty
                 return;
             }
 
-            // Don't want to remove constants.
-            if (getterField.IsConst)
+            // Mutable value type fields are mutable unless they are marked read-only
+            if (!getterField.IsReadOnly && getterField.Type.IsMutableValueType() != false)
+            {
+                return;
+            }
+
+            // Don't want to remove constants and volatile fields.
+            if (getterField.IsConst || getterField.IsVolatile)
             {
                 return;
             }
@@ -192,8 +201,7 @@ namespace Microsoft.CodeAnalysis.UseAutoProperty
             }
 
             var fieldReference = getterField.DeclaringSyntaxReferences[0];
-            var variableDeclarator = fieldReference.GetSyntax(cancellationToken) as TVariableDeclarator;
-            if (variableDeclarator == null)
+            if (!(fieldReference.GetSyntax(cancellationToken) is TVariableDeclarator variableDeclarator))
             {
                 return;
             }
@@ -204,8 +212,7 @@ namespace Microsoft.CodeAnalysis.UseAutoProperty
                 return;
             }
 
-            var fieldDeclaration = variableDeclarator?.Parent?.Parent as TFieldDeclaration;
-            if (fieldDeclaration == null)
+            if (!(variableDeclarator?.Parent?.Parent is TFieldDeclaration fieldDeclaration))
             {
                 return;
             }
@@ -222,8 +229,8 @@ namespace Microsoft.CodeAnalysis.UseAutoProperty
             }
 
             // Looks like a viable property/field to convert into an auto property.
-            analysisResults.Add(new AnalysisResult(property, getterField, propertyDeclaration, fieldDeclaration, variableDeclarator,
-                property.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+            analysisResults.Add(new AnalysisResult(property, getterField, propertyDeclaration,
+                fieldDeclaration, variableDeclarator, property.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
         }
 
         protected virtual bool CanConvert(IPropertySymbol property)
@@ -235,7 +242,8 @@ namespace Microsoft.CodeAnalysis.UseAutoProperty
             return CheckFieldAccessExpression(semanticModel, GetSetterExpression(setMethod, semanticModel, cancellationToken));
         }
 
-        private IFieldSymbol GetGetterField(SemanticModel semanticModel, IMethodSymbol getMethod, CancellationToken cancellationToken)
+        private IFieldSymbol GetGetterField(
+            SemanticModel semanticModel, IMethodSymbol getMethod, CancellationToken cancellationToken)
         {
             return CheckFieldAccessExpression(semanticModel, GetGetterExpression(getMethod, cancellationToken));
         }
@@ -311,38 +319,34 @@ namespace Microsoft.CodeAnalysis.UseAutoProperty
                 propertyDeclaration.GetLocation(), variableDeclarator.GetLocation());
 
             var option = optionSet.GetOption(CodeStyleOptions.PreferAutoProperties, propertyDeclaration.Language);
+            if (option.Notification.Severity == ReportDiagnostic.Suppress)
+            {
+                // Avoid reporting diagnostics when the feature is disabled. This primarily avoids reporting the hidden
+                // helper diagnostic which is not otherwise influenced by the severity settings.
+                return;
+            }
 
             // Place the appropriate marker on the field depending on the user option.
-            var diagnostic1 = Diagnostic.Create(
-                GetFieldDescriptor(option), nodeToFade.GetLocation(),
-                additionalLocations: additionalLocations);
+            var diagnostic1 = DiagnosticHelper.Create(
+                UnnecessaryWithSuggestionDescriptor,
+                nodeToFade.GetLocation(),
+                option.Notification.Severity,
+                additionalLocations: additionalLocations,
+                properties: null);
 
             // Also, place a hidden marker on the property.  If they bring up a lightbulb
             // there, they'll be able to see that they can convert it to an auto-prop.
             var diagnostic2 = Diagnostic.Create(
-                HiddenDescriptor, propertyDeclaration.GetLocation(),
+                Descriptor, propertyDeclaration.GetLocation(),
                 additionalLocations: additionalLocations);
 
             context.ReportDiagnostic(diagnostic1);
             context.ReportDiagnostic(diagnostic2);
         }
 
-        private DiagnosticDescriptor GetFieldDescriptor(CodeStyleOption<bool> styleOption)
-        {
-            if (styleOption.Value)
-            {
-                switch (styleOption.Notification.Value)
-                {
-                    case DiagnosticSeverity.Error: return ErrorDescriptor;
-                    case DiagnosticSeverity.Warning: return WarningDescriptor;
-                    case DiagnosticSeverity.Info: return InfoDescriptor;
-                }
-            }
-
-            return UnnecessaryWithSuggestionDescriptor;
-        }
-
-        protected virtual bool IsEligibleHeuristic(IFieldSymbol field, TPropertyDeclaration propertyDeclaration, Compilation compilation, CancellationToken cancellationToken)
+        protected virtual bool IsEligibleHeuristic(
+            IFieldSymbol field, TPropertyDeclaration propertyDeclaration,
+            Compilation compilation, CancellationToken cancellationToken)
         {
             return true;
         }
