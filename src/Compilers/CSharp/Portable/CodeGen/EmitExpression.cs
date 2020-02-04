@@ -1480,7 +1480,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 _builder.EmitOpCode(ILOpCode.Ldstr);
                 _builder.EmitModuleVersionIdStringToken();
             }
-            else if (method.ReturnType?.IsVoidPointer() == true && parameterCount == 1 && typeArgumentsLength == 0 && string.Equals(name, "LoadFunctionPointer") && call.Arguments[0] is BoundDelegateCreationExpression boundDelegateCreationExpression1)
+            else if (method.ReturnType?.IsVoidPointer() == true && parameterCount == 1 && string.Equals(name, "LoadFunctionPointer") && call.Arguments[0] is BoundDelegateCreationExpression boundDelegateCreationExpression1)
             {
                 match = true;
                 _builder.EmitOpCode(ILOpCode.Ldftn);

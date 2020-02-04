@@ -110,6 +110,10 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 callingConvention = CallingConvention.ThisCall;
             }
+            else if (methodSymbol.Name.EndsWith("Generic"))
+            {
+                callingConvention = CallingConvention.Generic;
+            }
             else
             {
                 callingConvention = CallingConvention.Default;
