@@ -19,7 +19,8 @@ Later you can omit the `-r` (`--restore`).
 You can invoke the compiler by:
 
 * Using `mono` with `artifacts/bin/csc/Debug/net472/csc.exe -noconfig`
-* _TODO: Figure out dotnet core_
+* Copy over `csc.*` and `Microsoft.Code.*` from `artifacts/bin/csc/Debug/netcoreappX.X/` to `/usr/share/dotnet/sdk/<version>/Roslyn/bincore`
+    (make a backup first)
 
 To use intrinsic functions in your code you can use
 
