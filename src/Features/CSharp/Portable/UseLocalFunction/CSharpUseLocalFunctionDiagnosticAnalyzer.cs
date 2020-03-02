@@ -66,13 +66,8 @@ namespace Microsoft.CodeAnalysis.CSharp.UseLocalFunction
             var options = syntaxContext.Options;
             var syntaxTree = syntaxContext.Node.SyntaxTree;
             var cancellationToken = syntaxContext.CancellationToken;
-            var optionSet = options.GetDocumentOptionSetAsync(syntaxTree, cancellationToken).GetAwaiter().GetResult();
-            if (optionSet == null)
-            {
-                return;
-            }
 
-            var styleOption = optionSet.GetOption(CSharpCodeStyleOptions.PreferLocalOverAnonymousFunction);
+            var styleOption = options.GetOption(CSharpCodeStyleOptions.PreferLocalOverAnonymousFunction, syntaxTree, cancellationToken);
             if (!styleOption.Value)
             {
                 // Bail immediately if the user has disabled this feature.
@@ -90,8 +85,7 @@ namespace Microsoft.CodeAnalysis.CSharp.UseLocalFunction
             var anonymousFunction = (AnonymousFunctionExpressionSyntax)syntaxContext.Node;
 
             var semanticModel = syntaxContext.SemanticModel;
-            if (!CheckForPattern(semanticModel, anonymousFunction, cancellationToken,
-                    out var localDeclaration))
+            if (!CheckForPattern(anonymousFunction, out var localDeclaration))
             {
                 return;
             }
@@ -175,10 +169,7 @@ namespace Microsoft.CodeAnalysis.CSharp.UseLocalFunction
         }
 
         private bool CheckForPattern(
-            SemanticModel semanticModel,
-            AnonymousFunctionExpressionSyntax anonymousFunction,
-            CancellationToken cancellationToken,
-            out LocalDeclarationStatementSyntax localDeclaration)
+            AnonymousFunctionExpressionSyntax anonymousFunction, out LocalDeclarationStatementSyntax localDeclaration)
         {
             // Look for:
             //
@@ -187,24 +178,20 @@ namespace Microsoft.CodeAnalysis.CSharp.UseLocalFunction
             //
             // Type t = null;
             // t = <anonymous function>
-            return CheckForSimpleLocalDeclarationPattern(semanticModel, anonymousFunction, cancellationToken, out localDeclaration) ||
-                   CheckForCastedLocalDeclarationPattern(semanticModel, anonymousFunction, cancellationToken, out localDeclaration) ||
-                   CheckForLocalDeclarationAndAssignment(semanticModel, anonymousFunction, cancellationToken, out localDeclaration);
+            return CheckForSimpleLocalDeclarationPattern(anonymousFunction, out localDeclaration) ||
+                   CheckForCastedLocalDeclarationPattern(anonymousFunction, out localDeclaration) ||
+                   CheckForLocalDeclarationAndAssignment(anonymousFunction, out localDeclaration);
         }
 
         private bool CheckForSimpleLocalDeclarationPattern(
-            SemanticModel semanticModel,
-            AnonymousFunctionExpressionSyntax anonymousFunction,
-            CancellationToken cancellationToken,
-            out LocalDeclarationStatementSyntax localDeclaration)
+            AnonymousFunctionExpressionSyntax anonymousFunction, out LocalDeclarationStatementSyntax localDeclaration)
         {
             // Type t = <anonymous function>
             if (anonymousFunction.IsParentKind(SyntaxKind.EqualsValueClause) &&
                 anonymousFunction.Parent.IsParentKind(SyntaxKind.VariableDeclarator) &&
                 anonymousFunction.Parent.Parent.IsParentKind(SyntaxKind.VariableDeclaration) &&
-                anonymousFunction.Parent.Parent.Parent.IsParentKind(SyntaxKind.LocalDeclarationStatement))
+                anonymousFunction.Parent.Parent.Parent.IsParentKind(SyntaxKind.LocalDeclarationStatement, out localDeclaration))
             {
-                localDeclaration = (LocalDeclarationStatementSyntax)anonymousFunction.Parent.Parent.Parent.Parent;
                 if (!localDeclaration.Declaration.Type.IsVar)
                 {
                     return true;
@@ -300,10 +287,7 @@ namespace Microsoft.CodeAnalysis.CSharp.UseLocalFunction
         }
 
         private bool CheckForCastedLocalDeclarationPattern(
-            SemanticModel semanticModel,
-            AnonymousFunctionExpressionSyntax anonymousFunction,
-            CancellationToken cancellationToken,
-            out LocalDeclarationStatementSyntax localDeclaration)
+            AnonymousFunctionExpressionSyntax anonymousFunction, out LocalDeclarationStatementSyntax localDeclaration)
         {
             // var t = (Type)(<anonymous function>)
             var containingStatement = anonymousFunction.GetAncestor<StatementSyntax>();
@@ -332,22 +316,16 @@ namespace Microsoft.CodeAnalysis.CSharp.UseLocalFunction
         }
 
         private bool CheckForLocalDeclarationAndAssignment(
-            SemanticModel semanticModel,
-            AnonymousFunctionExpressionSyntax anonymousFunction,
-            CancellationToken cancellationToken,
-            out LocalDeclarationStatementSyntax localDeclaration)
+            AnonymousFunctionExpressionSyntax anonymousFunction, out LocalDeclarationStatementSyntax localDeclaration)
         {
             // Type t = null;
             // t = <anonymous function>
-            if (anonymousFunction.IsParentKind(SyntaxKind.SimpleAssignmentExpression) &&
-                anonymousFunction.Parent.IsParentKind(SyntaxKind.ExpressionStatement) &&
-                anonymousFunction.Parent.Parent.IsParentKind(SyntaxKind.Block))
+            if (anonymousFunction.IsParentKind(SyntaxKind.SimpleAssignmentExpression, out AssignmentExpressionSyntax assignment) &&
+                anonymousFunction.Parent.IsParentKind(SyntaxKind.ExpressionStatement, out ExpressionStatementSyntax expressionStatement) &&
+                anonymousFunction.Parent.Parent.IsParentKind(SyntaxKind.Block, out BlockSyntax block))
             {
-                var assignment = (AssignmentExpressionSyntax)anonymousFunction.Parent;
                 if (assignment.Left.IsKind(SyntaxKind.IdentifierName))
                 {
-                    var expressionStatement = (ExpressionStatementSyntax)assignment.Parent;
-                    var block = (BlockSyntax)expressionStatement.Parent;
                     var expressionStatementIndex = block.Statements.IndexOf(expressionStatement);
                     if (expressionStatementIndex >= 1)
                     {

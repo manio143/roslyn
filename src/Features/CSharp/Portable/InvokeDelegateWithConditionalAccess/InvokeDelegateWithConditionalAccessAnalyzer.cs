@@ -9,6 +9,7 @@ using Microsoft.CodeAnalysis.CSharp.CodeStyle;
 using Microsoft.CodeAnalysis.CSharp.Extensions;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.CSharp.InvokeDelegateWithConditionalAccess
@@ -39,13 +40,8 @@ namespace Microsoft.CodeAnalysis.CSharp.InvokeDelegateWithConditionalAccess
             var options = syntaxContext.Options;
             var syntaxTree = syntaxContext.Node.SyntaxTree;
             var cancellationToken = syntaxContext.CancellationToken;
-            var optionSet = options.GetDocumentOptionSetAsync(syntaxTree, cancellationToken).GetAwaiter().GetResult();
-            if (optionSet == null)
-            {
-                return;
-            }
 
-            var styleOption = optionSet.GetOption(CSharpCodeStyleOptions.PreferConditionalDelegateCall);
+            var styleOption = options.GetOption(CSharpCodeStyleOptions.PreferConditionalDelegateCall, syntaxTree, cancellationToken);
             if (!styleOption.Value)
             {
                 // Bail immediately if the user has disabled this feature.
@@ -270,6 +266,21 @@ namespace Microsoft.CodeAnalysis.CSharp.InvokeDelegateWithConditionalAccess
 
             // Syntactically this looks good.  Now make sure that the local is a delegate type.
             var semanticModel = syntaxContext.SemanticModel;
+
+            // The initializer can't be inlined if it's an actual lambda/method reference.
+            // These cannot be invoked with `?.` (only delegate *values* can be).
+            var initializer = declarator.Initializer.Value.WalkDownParentheses();
+            if (initializer.IsAnyLambdaOrAnonymousMethod())
+            {
+                return false;
+            }
+
+            var initializerSymbol = semanticModel.GetSymbolInfo(initializer, cancellationToken).GetAnySymbol();
+            if (initializerSymbol is IMethodSymbol)
+            {
+                return false;
+            }
+
             var localSymbol = (ILocalSymbol)semanticModel.GetDeclaredSymbol(declarator, cancellationToken);
 
             // Ok, we made a local just to check it for null and invoke it.  Looks like something

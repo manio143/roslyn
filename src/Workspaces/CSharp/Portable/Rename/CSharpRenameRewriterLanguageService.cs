@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Extensions;
+using Microsoft.CodeAnalysis.CSharp.Simplification;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Utilities;
@@ -298,30 +299,14 @@ namespace Microsoft.CodeAnalysis.CSharp.Rename
                     return true;
                 }
 
-                if (node.IsParentKind(SyntaxKind.ParenthesizedLambdaExpression))
+                if (node.IsParentKind(SyntaxKind.ParenthesizedLambdaExpression, out ParenthesizedLambdaExpressionSyntax parenLambda))
                 {
-                    var parent = (ParenthesizedLambdaExpressionSyntax)node;
-                    if (ReferenceEquals(parent.ParameterList, node))
-                    {
-                        return true;
-                    }
-                    else
-                    {
-                        return false;
-                    }
+                    return ReferenceEquals(parenLambda.ParameterList, node);
                 }
 
-                if (node.IsParentKind(SyntaxKind.SimpleLambdaExpression))
+                if (node.IsParentKind(SyntaxKind.SimpleLambdaExpression, out SimpleLambdaExpressionSyntax simpleLambda))
                 {
-                    var parent = (SimpleLambdaExpressionSyntax)node;
-                    if (ReferenceEquals(parent.Parameter, node))
-                    {
-                        return true;
-                    }
-                    else
-                    {
-                        return false;
-                    }
+                    return ReferenceEquals(simpleLambda.Parameter, node);
                 }
 
                 return true;
@@ -629,8 +614,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Rename
                     }
                     else
                     {
-                        var semanticModel = GetSemanticModelForNode(parent, _speculativeModel ?? _semanticModel);
-                        newToken = Simplification.CSharpSimplificationService.TryEscapeIdentifierToken(newToken, parent, semanticModel);
+                        newToken = CSharpSimplificationHelpers.TryEscapeIdentifierToken(newToken, parent);
                     }
                 }
 
@@ -860,7 +844,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Rename
                     var properties = new List<ISymbol>();
                     foreach (var referencedSymbol in referencedSymbols)
                     {
-                        var property = await RenameLocations.ReferenceProcessing.GetPropertyFromAccessorOrAnOverride(
+                        var property = await RenameLocations.ReferenceProcessing.GetPropertyFromAccessorOrAnOverrideAsync(
                             referencedSymbol, baseSolution, cancellationToken).ConfigureAwait(false);
                         if (property.Symbol != null)
                         {

@@ -41,6 +41,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Setup
     [Guid(Guids.RoslynPackageIdString)]
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [ProvideMenuResource("Menus.ctmenu", version: 17)]
+    [ProvideUIContextRule(
+        Guids.EncCapableProjectExistsInWorkspaceUIContextString,
+        name: "Managed Edit and Continue capability",
+        expression: "CS | VB",
+        termNames: new[] { "CS", "VB" },
+        termValues: new[] { Guids.CSharpProjectExistsInWorkspaceUIContextString, Guids.VisualBasicProjectExistsInWorkspaceUIContextString })]
     internal class RoslynPackage : AbstractPackage
     {
         private VisualStudioWorkspace _workspace;
@@ -69,11 +75,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Setup
             var method = compilerFailFast.GetMethod(nameof(FailFast.OnFatalException), BindingFlags.Static | BindingFlags.NonPublic);
             property.SetValue(null, Delegate.CreateDelegate(property.PropertyType, method));
 
-            _workspace = _componentModel.GetService<VisualStudioWorkspace>();
-            _workspace.Services.GetService<IExperimentationService>();
-
             // Ensure the options persisters are loaded since we have to fetch options from the shell
             _componentModel.GetExtensions<IOptionPersister>();
+
+            _workspace = _componentModel.GetService<VisualStudioWorkspace>();
+            _workspace.Services.GetService<IExperimentationService>();
 
             RoslynTelemetrySetup.Initialize(this);
 
